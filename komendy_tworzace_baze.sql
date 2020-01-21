@@ -1,4 +1,4 @@
-create table czujniki (ID_czujnika INT NOT NULL AUTO_INCREMENT PRIMARY KEY, MAC_czujnika TEXT NOT NULL UNIQUE, data_pierwszego_podlaczenia TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);
+create table czujniki (ID_czujnika INT NOT NULL AUTO_INCREMENT PRIMARY KEY, MAC_czujnika VARCHAR(30) NOT NULL UNIQUE, data_pierwszego_podlaczenia TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);
 
 -- insert into pomiary (sensor_ID, x_axis, y_axis, z_axis) values ('1', '1', '2', '1.5'); do usuniecia, przykladowe inserty
 
