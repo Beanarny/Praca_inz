@@ -1,8 +1,5 @@
 import sys
 from PyQt5 import QtWidgets
-# from PyQt5.QtCore import pyqtSlot, QTime, QDate, QTimer
-# from PyQt5.QtWidgets import QApplication, QDialog, QMainWindow, QWidget, QSlider, QTimeEdit, QDateEdit
-# from PyQt5.QtWidgets import QMessageBox
 from PyQt5.uic import loadUi
 from time import sleep
 import csv
@@ -10,37 +7,15 @@ import mysql.connector
 import serial
 import datetime
 import matplotlib.pyplot as plt
-import time
-import winsound
 
-import queue
 import hashlib
-import pandas as pd
 import numpy as np
-import matplotlib.dates as mdates
-from datetime import datetime
-from PyQt5.QtWidgets import QGridLayout, QSizePolicy
-import pyqtgraph as pg
-from random import randint
 
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 
-import datetime
-
-import time
-import traceback, sys
-
-import logging
-
 from pyfirmata import Arduino
-
-
-
-
-
-########################################################################
 
 result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
 while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
@@ -48,13 +23,13 @@ while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, p
           # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
         cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
         result = cnx
-        print("...Connection established...")
+        # print("...Connection established...")
     except:
-        print("Connection failed")
+        # print("Connection failed")
         pass
 cursor = cnx.cursor(buffered=True)
 
-#######################################################################
+########################################################################
 
 port = "COM3"
 
@@ -69,11 +44,7 @@ def encrypt_string(hash_string):
         hashlib.sha256(hash_string.encode()).hexdigest()
     return sha_signature
 
-#################################################################
-
-
-   
-#############################################################
+########################################################################
 
 class Worker(QRunnable):
 
@@ -98,7 +69,6 @@ class main_window(QMainWindow): # MAIN WINDOW
             loadUi('gui_v4.ui', self)
             self.setWindowTitle("System monitorowania ruchu pacjentow")
             self.pushButtonObserve.clicked.connect(self.pushButtonObserveClicked)    # zmienic hello na cos innego
-            # self.pushButtonInsert.clicked.connect(self.pushButtonInsertClicked)
             self.pushButtonBegin.clicked.connect(self.pushButtonBeginClicked)
             self.newPatientButton.clicked.connect(self.newPatientButtonClicked)
             self.newUserButton.clicked.connect(self.newUserButtonClicked)
@@ -126,11 +96,7 @@ class main_window(QMainWindow): # MAIN WINDOW
             
             self.threadpool = QThreadPool()
             
-            self.current_user = None
-    # do Begin dodac rowniez wykrywanie upadku i bezdechu
-    
-    # def showEventsButtonClicked(self):
-        
+            self.current_user = None        
     
     def pushButtonCleanEventsClicked(self):
         
@@ -151,7 +117,7 @@ class main_window(QMainWindow): # MAIN WINDOW
         self.threadpool.start(worker)
         
     def pushButtonBeginClicked(self):
-        print("Rozpoczęto wczytywanie danych z monitora szeregowego...")
+        # print("Rozpoczęto wczytywanie danych z monitora szeregowego...")
         notification_win.label.setText("\nRozpoczęto monitoring.\n")
         notification_win.show()
         self.counter = 0
@@ -159,11 +125,11 @@ class main_window(QMainWindow): # MAIN WINDOW
         self.dict_id_to_alarmvalue = {}
         ###################### #log #rejestr #zdarzenie ########################################################################################
         
-        # print("login: ",self.current_user)
+        # # print("login: ",self.current_user)
         cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=self.current_user))
         ID_pracownika = cursor.fetchall()[0][0]
-        # print("Wyswietlanie ID pracownika na podstawie loginu...")
-        # print(ID_pracownika)
+        # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+        # # print(ID_pracownika)
         
         query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
         taxi = (ID_pracownika, "rozpoczecie pomiaru", "")
@@ -176,10 +142,10 @@ class main_window(QMainWindow): # MAIN WINDOW
                         FROM przydzial_czujnikow prz\
                         JOIN pacjenci pac\
                         ON prz.ID_pacjenta = pac.ID_pacjenta;")
-        print("...SELECT query succeeded...")
+        # print("...SELECT query succeeded...")
         myresult = cursor.fetchall()
         for x in myresult:
-            print(x[0],x[1])
+            # print(x[0],x[1])
             self.dict_id_to_alarmvalue[str(x[0])] = str(x[1])
         # uzycie slownika: dict_id_to_alarmvalue[ID_czujnika] zwraca wartosc alarmowa
         #---------------------------------------------------------------------------------------------------------------------
@@ -192,7 +158,7 @@ class main_window(QMainWindow): # MAIN WINDOW
                 temp = ser.readline().decode('utf-8')
                 temp=str(temp)
                 temp = temp.split()
-                # print(temp)
+                # # print(temp)
                 
                 query = ("INSERT INTO pomiary (ID_czujnika, modul, x_axis, y_axis, z_axis) VALUES (%s, %s, %s, %s, %s)")
                 taxi = (temp[0], temp[1], temp[2], temp[3], temp[4])
@@ -206,12 +172,12 @@ class main_window(QMainWindow): # MAIN WINDOW
 
                 self.df_sekw_bezdechu[int(id_czujnika)] = np.roll(self.df_sekw_bezdechu[int(id_czujnika)],1) # przesuniecie listy pomiarow w prawo
                 self.df_sekw_bezdechu[int(id_czujnika)][0] = float(x_value)
-                np.set_printoptions(precision=2)
-                np.set_printoptions(suppress=True)
-                print(self.df_sekw_bezdechu[int(id_czujnika)])
+                np.set_# printoptions(precision=2)
+                np.set_# printoptions(suppress=True)
+                # print(self.df_sekw_bezdechu[int(id_czujnika)])
                 max_value = np.max(self.df_sekw_bezdechu[int(id_czujnika)])
                 min_value = np.min(self.df_sekw_bezdechu[int(id_czujnika)])
-                # print("max: {maxv}, min: {minv}, x_value: {x}".format(maxv=str(max_value),minv=str(min_value),x=x_value))
+                
                 if (max_value-min_value)<0.03:
                     cursor.execute("SELECT pac.imie, pac.nazwisko\
                                         FROM pacjenci pac\
@@ -229,8 +195,8 @@ class main_window(QMainWindow): # MAIN WINDOW
 
                     cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
                     ID_pracownika = cursor.fetchall()[0][0]
-                    # print("Wyswietlanie ID pracownika na podstawie loginu...")
-                    # print(ID_pracownika)
+                    # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                    # # print(ID_pracownika)
                     
                     query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
                     taxi = (ID_pracownika, "Bezdech - {jakie_imie} {jakie_nazwisko}".format(jakie_imie=imie,jakie_nazwisko=nazwisko), "")
@@ -255,18 +221,18 @@ class main_window(QMainWindow): # MAIN WINDOW
                         imie = myresult[0][0]
                         nazwisko = myresult[0][1]
 
-                        print("Pacjent X Y upadl.")
+                        # print("Pacjent X Y upadl.")
                         notification_win.label.setText("\nPacjent {jakie_imie} {jakie_nazwisko} upadl.\n".format(jakie_imie=imie,jakie_nazwisko=nazwisko))
                         notification_win.show()
 
-                        print("mod = "+str(float(temp[1]))+", dict_id_to_alarmvalue value = "+self.dict_id_to_alarmvalue [str(x[0])])
-                        print("taxi: ",taxi)
+                        # print("mod = "+str(float(temp[1]))+", dict_id_to_alarmvalue value = "+self.dict_id_to_alarmvalue [str(x[0])])
+                        # print("taxi: ",taxi)
                         ###################### #log #rejestr #zdarzenie ########################################################################################
 
                         cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
                         ID_pracownika = cursor.fetchall()[0][0]
-                        # print("Wyswietlanie ID pracownika na podstawie loginu...")
-                        # print(ID_pracownika)
+                        # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                        # # print(ID_pracownika)
                         
                         query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
                         taxi = (ID_pracownika, "Upadek - {jakie_imie} {jakie_nazwisko}".format(jakie_imie=imie,jakie_nazwisko=nazwisko), "")
@@ -281,143 +247,22 @@ class main_window(QMainWindow): # MAIN WINDOW
                 
                 # if temp[1]>wartosc_graniczna_dla_danego_pacjenta
                 
-                # print("INSERT wykonany poprawnie")
+                # # print("INSERT wykonany poprawnie")
                 self.counter = self.counter + 1
-                # print("counter zwiekszony, counter = ", self.counter)
+                # # print("counter zwiekszony, counter = ", self.counter)
                 if ((self.counter%100)==0):
                     cnx.commit()
                     self.counter=0
-                    print("Zaimportowano 100 rekordow. Wykonano commit w bazie danych.")
+                    # print("Zaimportowano 100 rekordow. Wykonano commit w bazie danych.")
             except:
                 pass
-                #Exception as e: print(e)
-                # print("Jeden pomiar nie został zaimportowany. Pomiar moze byc niepoprawny. \n")
-                # pass
     
         self.timer = QTimer()
         self.timer.setInterval(10)
         self.timer.timeout.connect(lambda: execute_single_import())
         self.timer.start()
         
-    def pushButtonInsertClicked(self):
-        print("Writing .txt to SQL...")
-        #Load text file into list with CSV module
-        with open(r"C:\Users\matsz\Documents\original_kopia\Refactored_Py_DS_ML_Bootcamp-master\03-Python-for-Data-Analysis-Pandas/kuba - oddech 45 sekund, bezdech 30 sekund.TXT", "rt") as f:
-            reader = csv.reader(f, delimiter = ' ', skipinitialspace=True)
-            lineData = list()
-            cols = next(reader)
-        
-            for line in reader:
-                if line != []:
-                    lineData.append(line)
-                
-        #Writing Query to insert data
-        query = ("INSERT INTO pomiary (ID_czujnika, modul, x_axis, y_axis, z_axis) VALUES (%s, %s, %s, %s, %s)")
-        
-        #Change every item in the sub list into the correct data type and store it in a directory
-
-        for i in range(len(lineData)):
-            try:
-                taxi = (1, lineData[i][0], lineData[i][1], lineData[i][2], lineData[i][3]) # zamiast jedynki mozna wrzucic zmienna pobraną z pola EditText (trzeba takie dodać) gdzie uzytkownik wpisze numer czujnika z palca LUB jego ID
-                cursor.execute(query, taxi) #Execute the Query
-                sleep(0.03)
-                # if lineData[i][0]>2.5:
-                    # ctypes.windll.user32.MessageBoxW(0, "PACJENT UPADL, WYMAGANA INTERWENCJA !", "Informacja", 1)
-                if (i%1000)==0 and (i>0):
-                    print("1000" + " rows inserted, please wait...")
-        
-            except:
-                print("Błędny pomiar")
-                print(taxi)
-        print("Import finished.")
-        #Commit the query
-        cnx.commit()
-
-    #  STARE:
-    ############################################# funkcja TESTOWA, import pliku .txt z pomiarami do bazy danych
-    # def pushButtonInsertClicked(self):
-
-    #     print("Writing .txt to SQL...")
-                
-    #     #Load text file into list with CSV module
-    #     with open(r"C:\Users\matsz\Documents\original_kopia\Refactored_Py_DS_ML_Bootcamp-master\03-Python-for-Data-Analysis-Pandas/kuba - oddech 45 sekund, bezdech 30 sekund.TXT", "rt") as f:
-    #         reader = csv.reader(f, delimiter = ' ', skipinitialspace=True)
-    #         lineData = list()
-    #         cols = next(reader)
-        
-    #         for line in reader:
-    #             if line != []:
-    #                 lineData.append(line)
-                
-    #     # Writing Query to insert data
-    #     query = ("INSERT INTO pomiary (ID_czujnika, modul, x_axis, y_axis, z_axis) VALUES (%s, %s, %s, %s, %s)")
-        
-    #     #Change every item in the sub list into the correct data type and store it in a directory
-    #     serie_bezdechu = pd.DataFrame()
-    #     # ta petla for z zalozenia CHYBA nie pozwala na "wyjscie z niej do GUI", zeby pozwolic na interakcje
-    #     # musi sie skonczyc cala petla zeby program w ogole ruszyl
-    #     # for i in range(len(lineData)):
-    #     #     try:
-                
-    #     #         taxi = (1, lineData[i][0], lineData[i][1], lineData[i][2], lineData[i][3]) # zamiast jedynki mozna wrzucic zmienna pobraną z pola EditText (trzeba takie dodać) gdzie uzytkownik wpisze numer czujnika z palca LUB jego ID
-    #     def execute_and_pop(lista):
-    #         taxi = (1, str(lista[0][0]), str(lista[0][1]), str(lista[0][2]), str(lista[0][3]))
-    #         try:
-    #             cursor.execute(query, taxi)
-    #             lista.pop(0)
-    #             cnx.commit()
-    #         except:
-    #             print("Błędny pomiar")
-    #             print(taxi)
-    #     self.timer = QTimer()
-    #     self.timer.setInterval(1)
-    #     self.timer.timeout.connect(lambda: execute_and_pop(lineData))
-    #     self.timer.start()
-    #     # cursor.execute(query, taxi) #Execute the Query
-    #     # print(taxi)
-    #     # sleep(0.03)
-    #     # self.timer = QTimer()
-    #     # self.timer.setInterval(1000)
-    #     # self.timer.timeout.connect(self.showHistoryButtonClicked)
-    #     # self.timer.start()
-    #     # if lineData[i][0]>2.5:
-    #     # if (i%1000)==0 and (i>0):
-    #     #     print("1000" + " rows inserted, please wait...")
-        
-    #         # except:
-    #         #     print("Błędny pomiar")
-    #         #     print(taxi)
-    #     print("Import finished.")
-    #     #Commit the query
-    #     cnx.commit()
-###########################################################################################################################
-    #         self.graphWidget = pg.PlotWidget()
-    #         self.setCentralWidget(self.graphWidget)
-    
-    #         self.x = list(range(100))  # 100 time points
-    #         self.y = [randint(0,100) for _ in range(100)]  # 100 data points
-    
-    #         self.graphWidget.setBackground('w')
-    
-    #         pen = pg.mkPen(color=(255, 0, 0))
-    #         self.data_line =  self.graphWidget.plot(self.x, self.y, pen=pen)
-    #         self.timer = QTimer()
-    #         self.timer.setInterval(50)
-    #         self.timer.timeout.connect(self.update_plot_data)
-    #         self.timer.start()
-    #         ##################################################################################################
-    # def update_plot_data(self):
-
-    #     self.x = self.x[1:]  # Remove the first y element.
-    #     self.x.append(self.x[-1] + 1)  # Add a new value 1 higher than the last.
-    
-    #     self.y = self.y[1:]  # Remove the first 
-    #     self.y.append( randint(0,100))  # Add a new random value.
-    
-    #     self.data_line.setData(self.x, self.y)  # Update the data.
-#############################################################################################################################
-
-###################################################### Wczytywanie pacjentow z bazy do Comboboxa Historii
+  ###################################################### Wczytywanie pacjentow z bazy do Comboboxa Historii
     def assignSensorPushButtonClicked(self):
         assign_sensor_window.show()
         
@@ -454,27 +299,28 @@ class main_window(QMainWindow): # MAIN WINDOW
         worker = Worker()
         self.threadpool.start(worker) 
         
-        print("Wybor pacjentow... ")
+        # print("Wybor pacjentow... ")
 
         seekHist = self.filterHistoryLineEdit.text()
-        print(seekHist)
+        # print(seekHist)
         try:
             cursor.execute("SELECT imie, nazwisko FROM pacjenci WHERE imie LIKE BINARY \'%{seek}%\' OR nazwisko LIKE BINARY \'%{seek}%\' OR ID_pacjenta LIKE BINARY \'%{seek}%\'".format(seek=seekHist))
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             pacjenci = []
             for x in myresult:
                         pacjenci.append(str(x[0])+" "+str(x[1]))
             self.patientHistoryComboBox.addItems(pacjenci)
             ###################################################################
         except:
-            print("SELECT query failed")
+            pass
+            # print("SELECT query failed")
 
         
     
@@ -483,32 +329,33 @@ class main_window(QMainWindow): # MAIN WINDOW
         worker = Worker()
         self.threadpool.start(worker) 
         
-        print("Wybor pacjentow... ")
+        # print("Wybor pacjentow... ")
                 #Connect with database
 
         seekLive = self.filterLiveLineEdit.text()
-        print(seekLive)
+        # print(seekLive)
         try:
             cursor.execute("SELECT imie, nazwisko FROM pacjenci WHERE imie LIKE BINARY \'%{seek}%\' OR nazwisko LIKE BINARY \'%{seek}%\' OR ID_pacjenta LIKE BINARY \'%{seek}%\'".format(seek=seekLive))
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
-            # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             pacjenci = []
             for x in myresult:
                         pacjenci.append(str(x[0])+" "+str(x[1]))
             self.patientLiveComboBox.addItems(pacjenci)
             ###################################################################
         except:
-            print("SELECT query failed")
+            pass
+            # print("SELECT query failed")
             
             
     def showEventsButtonClicked(self):
-        print("Filter events button clicked...")
+        # print("Filter events button clicked...")
         worker = Worker()
         self.threadpool.start(worker) 
         
@@ -535,14 +382,14 @@ class main_window(QMainWindow): # MAIN WINDOW
         
 ###################################################### Odczytywanie czasu z widgetow ^^^^^^^^^^^^^^^
         
-        print("Filtrowanie zdarzen...")
+        # print("Filtrowanie zdarzen...")
 
-        print("dateTimeFrom = "+str(dateTimeFrom))
-        print("dateTimeTo = "+str(dateTimeTo))
+        # print("dateTimeFrom = "+str(dateTimeFrom))
+        # print("dateTimeTo = "+str(dateTimeTo))
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! WAZNE
         # teraz odczytac imie i nazwisko (A MOZE COS JESZCZE?...) i na podstawie tego zJOINOWAC ID_czujnika i na podstawie ID czujnika dodać to do WHERE historii i tak samo LIVE'a
         seekEvent = self.eventLineEdit.text()
-        # print("SELECT ID_pomiaru, x_axis FROM pomiary WHERE data_i_czas_pomiaru BETWEEN \'{data_i_czas_od}\' AND \'{data_i_czas_do}\' AND WHERE ID_czujnika==1 SELECT ID_czujnika FROM przydzial_czujnikow WHERE ID_czujnika".format(data_i_czas_od=dateTimeFrom,data_i_czas_do=dateTimeTo))
+        # # print("SELECT ID_pomiaru, x_axis FROM pomiary WHERE data_i_czas_pomiaru BETWEEN \'{data_i_czas_od}\' AND \'{data_i_czas_do}\' AND WHERE ID_czujnika==1 SELECT ID_czujnika FROM przydzial_czujnikow WHERE ID_czujnika".format(data_i_czas_od=dateTimeFrom,data_i_czas_do=dateTimeTo))
         try:
             cursor.execute("SELECT per.imie, rej.rodzaj_zdarzenia, rej.data_i_czas_zdarzenia\
                             FROM rejestr_zdarzen rej\
@@ -551,29 +398,30 @@ class main_window(QMainWindow): # MAIN WINDOW
                             WHERE rej.data_i_czas_zdarzenia BETWEEN \"{data_i_czas_od}\" AND \"{data_i_czas_do}\"\
                                 AND rej.rodzaj_zdarzenia LIKE \'%{jakie_zdarzenia}%\'".format(data_i_czas_od=dateTimeFrom,data_i_czas_do=dateTimeTo,jakie_zdarzenia=seekEvent))
             
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
 
             for x in myresult:
-                # print(x[5].strftime('%Y-%m-%d %H:%M:%S'))
+                # # print(x[5].strftime('%Y-%m-%d %H:%M:%S'))
                 
                 window.eventList.insertItem(0, str(x[0])+", "+str(x[1])+", "+str(x[2].strftime('%Y-%m-%d %H:%M:%S')))
             notification_win.label.setText("Zakonczono importowanie zdarzeń.")
             notification_win.show()
             
-        except Exception as e:
-            print(e)
-            print("SELECT query failed")
+        except:
+            pass
+            # print(e)
+            # print("SELECT query failed")
             notification_win.label.setText("Niepowodzenie dodania zdarzen.")
             notification_win.show()
         
         
     def showHistoryButtonClicked(self):
-        print("showHistoryButtonClicked")
+        # print("showHistoryButtonClicked")
         worker = Worker()
         self.threadpool.start(worker) 
         
@@ -598,10 +446,10 @@ class main_window(QMainWindow): # MAIN WINDOW
         
 ###################################################### Odczytywanie czasu z widgetow ^^^^^^^^^^^^^^^
         
-        print("Drukowanie wykresu HISTORII wybranego pacjenta...")
+        # print("Drukowanie wykresu HISTORII wybranego pacjenta...")
 
-        print("dateTimeFrom = "+str(dateTimeFrom))
-        print("dateTimeTo = "+str(dateTimeTo))
+        # print("dateTimeFrom = "+str(dateTimeFrom))
+        # print("dateTimeTo = "+str(dateTimeTo))
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! WAZNE
         # teraz odczytac imie i nazwisko (A MOZE COS JESZCZE?...) i na podstawie tego zJOINOWAC ID_czujnika i na podstawie ID czujnika dodać to do WHERE historii i tak samo LIVE'a
         wybrany_pacjent = self.patientHistoryComboBox.currentText()
@@ -611,7 +459,7 @@ class main_window(QMainWindow): # MAIN WINDOW
             wybrane_nazwisko = wybrany_pacjent[1]
         except:
             pass
-        # print("SELECT ID_pomiaru, x_axis FROM pomiary WHERE data_i_czas_pomiaru BETWEEN \'{data_i_czas_od}\' AND \'{data_i_czas_do}\' AND WHERE ID_czujnika==1 SELECT ID_czujnika FROM przydzial_czujnikow WHERE ID_czujnika".format(data_i_czas_od=dateTimeFrom,data_i_czas_do=dateTimeTo))
+        # # print("SELECT ID_pomiaru, x_axis FROM pomiary WHERE data_i_czas_pomiaru BETWEEN \'{data_i_czas_od}\' AND \'{data_i_czas_do}\' AND WHERE ID_czujnika==1 SELECT ID_czujnika FROM przydzial_czujnikow WHERE ID_czujnika".format(data_i_czas_od=dateTimeFrom,data_i_czas_do=dateTimeTo))
         try:
             cursor.execute("SELECT ID_pomiaru, x_axis\
                             FROM pomiary pom\
@@ -624,12 +472,12 @@ class main_window(QMainWindow): # MAIN WINDOW
                             WHERE pac.imie LIKE \'{imie}\' AND pac.nazwisko LIKE \'{nazwisko}\'\
                             AND data_i_czas_pomiaru BETWEEN \"{data_i_czas_od}\" AND \"{data_i_czas_do}\"".format(imie=wybrane_imie,nazwisko=wybrane_nazwisko,data_i_czas_od=dateTimeFrom,data_i_czas_do=dateTimeTo))
             
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             array_x = []
             array_y = []
             for x in myresult:
@@ -655,7 +503,7 @@ class main_window(QMainWindow): # MAIN WINDOW
             # ax.yaxis.set_ticks(np.arange(-0.1,0.5,0.05))
             plt.show()
         except:
-            print("SELECT query failed")
+            # print("SELECT query failed")
             notification_win.label.setText("Niepowodzenie wyswietlania wykresu. Nie wybrano pacjenta lub nie udało się połączyć z bazą danych. \n\nUpewnij się, czy kliknięto przycisk Filtruj.")
             notification_win.show()
         
@@ -668,7 +516,7 @@ class main_window(QMainWindow): # MAIN WINDOW
         self.threadpool.start(worker) 
         
     def pushButtonObserveClicked(self):    # funkcja testowa, usunac lub wymienic na inna
-        print("Drukowanie wykresu...")
+        # print("Drukowanie wykresu...")
         worker = Worker()
         self.threadpool.start(worker) 
 
@@ -678,7 +526,7 @@ class main_window(QMainWindow): # MAIN WINDOW
             self.sliderValueLineEdit.setText("60")
             
         jaki_zakres = self.sliderValueLineEdit.text()
-        print("Podany zakres czasu powinien zawierac sie w zakresie od 10 do 3000 sekund.")
+        # print("Podany zakres czasu powinien zawierac sie w zakresie od 10 do 3000 sekund.")
         
         wybrany_pacjent = self.patientLiveComboBox.currentText()
         try:
@@ -699,9 +547,9 @@ class main_window(QMainWindow): # MAIN WINDOW
                             WHERE pac.imie LIKE \'{imie}\'          \
                             AND pac.nazwisko LIKE \'{nazwisko}\'   \
                             AND ID_pomiaru > ((SELECT MAX(ID_pomiaru) FROM pomiary)-(33*{sekundy}));".format(imie=wybrane_imie,nazwisko=wybrane_nazwisko,sekundy=jaki_zakres))
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             array_x = []
             array_y = []
             for x in myresult:
@@ -728,7 +576,7 @@ class main_window(QMainWindow): # MAIN WINDOW
             plt.show()
             self.currentPersonLabel.setText(self.patientLiveComboBox.currentText())
         except:
-            print("SELECT query failed")
+            # print("SELECT query failed")
             self.currentPersonLabel.setText("---")
             notification_win.label.setText("Niepowodzenie wyswietlania wykresu. Nie wybrano pacjenta lub nie udało się połączyć z bazą danych. \n\nUpewnij się, czy kliknięto przycisk Filtruj.")
             notification_win.show()
@@ -740,14 +588,14 @@ class main_window(QMainWindow): # MAIN WINDOW
         
 ######################################################################################## funkcje otwierajace nowe okna po kliknieciu przycisku w glownym GUI
     def newPatientButtonClicked(self):
-        print("Adding new patient...")
+        # print("Adding new patient...")
         new_patient_window.show()
         
         worker = Worker()
         self.threadpool.start(worker) 
         
     def newUserButtonClicked(self):
-        print("Adding new user...")
+        # print("Adding new user...")
         new_user_window.show()
         
         worker = Worker()
@@ -802,7 +650,7 @@ class new_patient(QMainWindow):    #
         try:
             cursor.execute(query, taxi) #Execute the Query
             cnx.commit()
-            print("Dodano nowego pacjenta.")
+            # print("Dodano nowego pacjenta.")
             # Czyszczenie wprowadzonego tekstu
             self.nameLineEdit.setText("")
             self.surnameLineEdit.setText("")
@@ -825,8 +673,8 @@ class new_patient(QMainWindow):    #
             
             cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
             ID_pracownika = cursor.fetchall()[0][0]
-            # print("Wyswietlanie ID pracownika na podstawie loginu...")
-            # print(ID_pracownika)
+            # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # # print(ID_pracownika)
             
             query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
             taxi = (ID_pracownika, "Dodanie pacjenta {jakie_imie} {jakie_nazwisko}".format(jakie_imie=imie,jakie_nazwisko=nazwisko), "")
@@ -866,39 +714,40 @@ class edit_patient(QMainWindow):    #
         worker = Worker()
         self.threadpool.start(worker) 
         
-        print("Wybor pacjentow... ")
+        # print("Wybor pacjentow... ")
 
         seekToEdit = self.filterToEditLineEdit.text()
-        print(seekToEdit)
+        # print(seekToEdit)
         try:
             cursor.execute("SELECT imie, nazwisko FROM pacjenci WHERE imie LIKE BINARY \'%{seek}%\' OR nazwisko LIKE BINARY \'%{seek}%\' OR ID_pacjenta LIKE BINARY \'%{seek}%\'".format(seek=seekToEdit))
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             pacjenci = []
             for x in myresult:
                         pacjenci.append(str(x[0])+" "+str(x[1]))
             self.patientToEditComboBox.addItems(pacjenci)
             ###################################################################
         except:
-            print("SELECT query failed")
+            pass
+            # print("SELECT query failed")
 
         
     
     def pushButtonLoadToEditPatientClicked(self):
         
-        print("Ladowanie danych pacjenta... ")
+        # print("Ladowanie danych pacjenta... ")
         
         worker = Worker()
         self.threadpool.start(worker) 
 
         # seekHist = self.filterToEditLineEdit.text()
-        # print(seekHist)
+        # # print(seekHist)
         wybrany_pacjent = self.patientToEditComboBox.currentText()
         try:
             wybrany_pacjent = wybrany_pacjent.split()
@@ -910,12 +759,12 @@ class edit_patient(QMainWindow):    #
             cursor.execute("SELECT imie, nazwisko, plec, data_urodzenia, PESEL, telefon, email, kod_pocztowy, miejscowosc, ulica, wartosc_alarmowa FROM pacjenci WHERE imie LIKE \'%{imie}%\' AND nazwisko LIKE \'%{nazwisko}%\'".format(imie=wybrane_imie, nazwisko=wybrane_nazwisko))
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             # pacjenci = []
             for x in myresult:
                 # pacjenci.append(str(x[0])+" "+str(x[1]))
@@ -938,10 +787,8 @@ class edit_patient(QMainWindow):    #
                 self.alarmValueLineEdit.setText(str(x[10]))
             ###################################################################
         except:
-            print("SELECT query failed")
-
-        
-    
+            pass
+            # print("SELECT query failed")      
 
     def pushButtonAbortClicked(self):
         edit_patient_window.hide()
@@ -988,7 +835,7 @@ class edit_patient(QMainWindow):    #
         try:
             cursor.execute(query) #Execute the Query
             cnx.commit()
-            print("Zmieniono dane pacjenta.")
+            # print("Zmieniono dane pacjenta.")
             # Czyszczenie wprowadzonego tekstu
             self.nameLineEdit.setText("")
             self.surnameLineEdit.setText("")
@@ -1010,8 +857,8 @@ class edit_patient(QMainWindow):    #
             
             cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
             ID_pracownika = cursor.fetchall()[0][0]
-            # print("Wyswietlanie ID pracownika na podstawie loginu...")
-            # print(ID_pracownika)
+            # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # # print(ID_pracownika)
             
             query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
             taxi = (ID_pracownika, "Zmiana danych pacjenta {jakie_imie} {jakie_nazwisko}".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
@@ -1062,7 +909,7 @@ class edit_patient(QMainWindow):    #
             
                 cursor.execute(query) #Execute the Query
                 cnx.commit()
-                print("Usunieto pacjenta {jakie_imie} {jakie_nazwisko}.".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko))
+                # print("Usunieto pacjenta {jakie_imie} {jakie_nazwisko}.".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko))
                 # Czyszczenie wprowadzonego tekstu
                 self.nameLineEdit.setText("")
                 self.surnameLineEdit.setText("")
@@ -1081,8 +928,8 @@ class edit_patient(QMainWindow):    #
                 
                 cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
                 ID_pracownika = cursor.fetchall()[0][0]
-                # print("Wyswietlanie ID pracownika na podstawie loginu...")
-                # print(ID_pracownika)
+                # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                # # print(ID_pracownika)
                 
                 query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
                 taxi = (ID_pracownika, "Usuniecie pacjenta {jakie_imie} {jakie_nazwisko}".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
@@ -1096,15 +943,11 @@ class edit_patient(QMainWindow):    #
                 notification_win.label.setText("Usunieto pacjenta {jakie_imie} {jakie_nazwisko}.".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko))
                 notification_win.show()
                 # TODO # zarejestrowac ta akcje w logach zdarzen
-            except Exception as e:
-                print(e)
+            except:
                 notification_win.label.setText("Wystapil problem podczas usuwania pacjenta. Sprawdz czy pacjent zostal wybrany.")
                 notification_win.show()
                 cnx.rollback()
-            
-        else:
-
-            print("")
+                pass
 
 class new_sensor(QMainWindow):    #
    
@@ -1119,7 +962,6 @@ class new_sensor(QMainWindow):    #
         
         self.threadpool = QThreadPool()
         
-
     def pushButtonAbortClicked(self):
         new_patient_window.hide()
         
@@ -1140,7 +982,7 @@ class new_sensor(QMainWindow):    #
         try:
             cursor.execute(query) #Execute the Query
             cnx.commit()
-            print("Dodano nowy czujnik.")
+            # print("Dodano nowy czujnik.")
             # Czyszczenie wprowadzonego tekstu
             self.macLineEdit.setText("")
             self.sensorIDLineEdit.setText("")
@@ -1152,8 +994,8 @@ class new_sensor(QMainWindow):    #
             
             cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
             ID_pracownika = cursor.fetchall()[0][0]
-            # print("Wyswietlanie ID pracownika na podstawie loginu...")
-            # print(ID_pracownika)
+            # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # # print(ID_pracownika)
             
             query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
             taxi = (ID_pracownika, "Dodano czujnik, MAC: {jaki_mac}".format(jaki_mac=mac_address), "")
@@ -1162,8 +1004,7 @@ class new_sensor(QMainWindow):    #
             window.eventList.insertItem(0, "Dodano czujnik, MAC: {jaki_mac}, ".format(jaki_mac=mac_address)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
             
             ########################################################################################################################################
-
-            
+   
             new_sensor_window.hide()
         except:
             notification_win.label.setText("Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.")
@@ -1186,7 +1027,7 @@ class new_sensor(QMainWindow):    #
         try:
             cursor.execute(query) #Execute the Query
             cnx.commit()
-            print("Dodano nowy czujnik.")
+            # print("Dodano nowy czujnik.")
             # Czyszczenie wprowadzonego tekstu
             self.macLineEdit.setText("")
             self.sensorIDLineEdit.setText("")
@@ -1199,8 +1040,8 @@ class new_sensor(QMainWindow):    #
             
             cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
             ID_pracownika = cursor.fetchall()[0][0]
-            # print("Wyswietlanie ID pracownika na podstawie loginu...")
-            # print(ID_pracownika)
+            # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # # print(ID_pracownika)
             
             query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
             taxi = (ID_pracownika, "Dodano czujnik, MAC: {jaki_mac}".format(jaki_mac=mac_address), "")
@@ -1246,10 +1087,10 @@ class edit_sensor(QMainWindow):    #
         # Filtrowanie pacjentow
         self.chooseToEditComboBox.clear()
         
-        print("Wybor czujnika... ")
+        # print("Wybor czujnika... ")
 
         seekToEdit = self.filterToEditLineEdit.text()
-        print(seekToEdit)
+        # print(seekToEdit)
         try:
 
             cursor.execute("SELECT cz.ID_czujnika, cz.MAC_czujnika, IFNULL(pac.imie,'-'), IFNULL(pac.nazwisko,'-')\
@@ -1264,19 +1105,20 @@ class edit_sensor(QMainWindow):    #
             # wyswietlanie imienia i nazwiska obok ID oraz MAC ma na celu podpowiedzenie uzytkownikowi, kogo dotyczy wybrany czujnik, czy jest "wolny"
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             czujniki = []
             for x in myresult:
                         czujniki.append(str(x[0])+" "+str(x[1])+" "+str(x[2])+" "+str(x[3]))
             self.chooseToEditComboBox.addItems(czujniki)
             
         except:
-            print("SELECT query failed")
+            pass
+            # print("SELECT query failed")
 
         
     
@@ -1285,10 +1127,10 @@ class edit_sensor(QMainWindow):    #
         worker = Worker()
         self.threadpool.start(worker) 
         
-        print("Ladowanie danych czujnika... ")
+        # print("Ladowanie danych czujnika... ")
 
         # seekHist = self.filterToEditLineEdit.text()
-        # print(seekHist)
+        # # print(seekHist)
         wybrany_czujnik = self.chooseToEditComboBox.currentText()
         try:
             wybrany_czujnik = wybrany_czujnik.split()
@@ -1299,12 +1141,12 @@ class edit_sensor(QMainWindow):    #
             cursor.execute("SELECT ID_czujnika, MAC_czujnika FROM czujniki WHERE ID_czujnika={jakie_id}".format(jakie_id=wybrane_id))
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             # pacjenci = []
             for x in myresult:
                 # pacjenci.append(str(x[0])+" "+str(x[1]))
@@ -1312,7 +1154,8 @@ class edit_sensor(QMainWindow):    #
                 self.macLineEdit.setText(str(x[1]))
             ###################################################################
         except:
-            print("SELECT query failed")
+            pass
+            # print("SELECT query failed")
         self.previous_mac = self.macLineEdit.text()
 
         
@@ -1349,7 +1192,7 @@ class edit_sensor(QMainWindow):    #
         try:
             cursor.execute(query) #Execute the Query
             cnx.commit()
-            print("Zmieniono dane czujnika.")
+            # print("Zmieniono dane czujnika.")
             # Czyszczenie wprowadzonego tekstu
             self.idLineEdit.setText("")
             self.macLineEdit.setText("")
@@ -1363,8 +1206,8 @@ class edit_sensor(QMainWindow):    #
             
             cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
             ID_pracownika = cursor.fetchall()[0][0]
-            # print("Wyswietlanie ID pracownika na podstawie loginu...")
-            # print(ID_pracownika)
+            # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # # print(ID_pracownika)
             
             query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
             taxi = (ID_pracownika, "Zmiana MAC czujnika z {stary_mac} na {jaki_mac}".format(stary_mac=self.previous_mac, jaki_mac=nowyMAC), "")
@@ -1416,7 +1259,7 @@ class edit_sensor(QMainWindow):    #
             
                 cursor.execute(query) #Execute the Query
                 cnx.commit()
-                print("Usunieto czujnik z bazy, MAC: {jaki_mac}.".format(jaki_mac=mac_usuwanego_czujnika))
+                # print("Usunieto czujnik z bazy, MAC: {jaki_mac}.".format(jaki_mac=mac_usuwanego_czujnika))
                 # Czyszczenie wprowadzonego tekstu
                 self.idLineEdit.setText("")
                 self.macLineEdit.setText("")
@@ -1430,8 +1273,8 @@ class edit_sensor(QMainWindow):    #
             
                 cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
                 ID_pracownika = cursor.fetchall()[0][0]
-                # print("Wyswietlanie ID pracownika na podstawie loginu...")
-                # print(ID_pracownika)
+                # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                # # print(ID_pracownika)
                 
                 query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
                 taxi = (ID_pracownika, "Usunieto czujnik, MAC: {jaki_mac}".format(jaki_mac=mac_usuwanego_czujnika), "")
@@ -1445,10 +1288,6 @@ class edit_sensor(QMainWindow):    #
                 notification_win.label.setText("Wystapil problem podczas usuwania czujnika. Sprawdz czy pacjent zostal wybrany.")
                 notification_win.show()
                 cnx.rollback()
-            
-        else:
-
-            print("")
 
 class assign_sensor(QMainWindow):    #
 
@@ -1475,13 +1314,13 @@ class assign_sensor(QMainWindow):    #
         # Filtrowanie pacjentow
         self.chooseToEditComboBox.clear()
         
-        print("Wybor czujnika... ")
+        # print("Wybor czujnika... ")
         
         worker = Worker()
         self.threadpool.start(worker) 
 
         seekToEdit = self.filterToEditLineEdit.text()
-        print(seekToEdit)
+        # print(seekToEdit)
         try:
 
             cursor.execute("SELECT cz.ID_czujnika, cz.MAC_czujnika, IFNULL(pac.imie,'-'), IFNULL(pac.nazwisko,'-')\
@@ -1496,22 +1335,21 @@ class assign_sensor(QMainWindow):    #
             # wyswietlanie imienia i nazwiska obok ID oraz MAC ma na celu podpowiedzenie uzytkownikowi, kogo dotyczy wybrany czujnik, czy jest "wolny"
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             czujniki = []
             for x in myresult:
                         czujniki.append(str(x[0])+" "+str(x[1])+" "+str(x[2])+" "+str(x[3]))
             self.chooseToEditComboBox.addItems(czujniki)
 
         except:
-            print("SELECT query failed")
+            pass
+            # print("SELECT query failed")
 
-        
-    
     def pushButtonFilterEditPatientClicked(self):
         # Filtrowanie pacjentow
         self.patientToEditComboBox.clear()
@@ -1519,29 +1357,27 @@ class assign_sensor(QMainWindow):    #
         worker = Worker()
         self.threadpool.start(worker) 
         
-        print("Wybor pacjentow... ")
+        # print("Wybor pacjentow... ")
 
         seekToEdit = self.filterPatientLineEdit.text()
-        print(seekToEdit)
+        # print(seekToEdit)
         try:
             cursor.execute("SELECT ID_pacjenta, imie, nazwisko FROM pacjenci WHERE imie LIKE BINARY \'%{seek}%\' OR nazwisko LIKE BINARY \'%{seek}%\' OR ID_pacjenta LIKE BINARY \'%{seek}%\'".format(seek=seekToEdit))
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             pacjenci = []
             for x in myresult:
                         pacjenci.append(str(x[0])+" "+str(x[1])+" "+str(x[2]))
             self.patientToEditComboBox.addItems(pacjenci)
             ###################################################################
         except:
-            print("SELECT query failed")
-
-        
+            pass        
     
     def pushButtonAbortClicked(self):
         edit_patient_window.hide()
@@ -1575,18 +1411,18 @@ class assign_sensor(QMainWindow):    #
             wybrane_imie = wybrany_pacjent[1]
             wybrane_nazwisko = wybrany_pacjent[2]
                         
-            print("Udalo sie odczytac dane z ComboBoxow")
+            # print("Udalo sie odczytac dane z ComboBoxow")
         except:
             pass
         
         query = ("INSERT INTO przydzial_czujnikow (ID_pacjenta,ID_czujnika,status) VALUES ({ID_pacjenta_2},{ID_czujnika_2},'default')"\
                      .format(ID_pacjenta_2=wybrane_id_pacjenta,ID_czujnika_2=wybrane_id))
-        print("query: "+query)
+        # print("query: "+query)
         # taxi = (imie, nazwisko, plec, data_urodzenia, PESEL ,telefon, email, kod_pocztowy, miejscowosc, ulica) # zamiast jedynki mozna wrzucic zmienna pobraną z pola EditText (trzeba takie dodać) gdzie uzytkownik wpisze numer czujnika z palca LUB jego ID
         try:
             cursor.execute(query) #Execute the Query
             cnx.commit()
-            print("Dodano nowe przypisanie.")
+            # print("Dodano nowe przypisanie.")
             # Czyszczenie wprowadzonego tekstu
             self.filterToEditLineEdit.setText("")
             self.filterPatientLineEdit.setText("")
@@ -1604,8 +1440,8 @@ class assign_sensor(QMainWindow):    #
             
             cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
             ID_pracownika = cursor.fetchall()[0][0]
-            # print("Wyswietlanie ID pracownika na podstawie loginu...")
-            # print(ID_pracownika)
+            # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # # print(ID_pracownika)
             
             query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
             taxi = (ID_pracownika, "Przypisano czujnik, MAC: {jaki_mac} pacjentowi {jakie_imie} {jakie_nazwisko}, ".format(jaki_mac=MAC_assigned,jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
@@ -1615,11 +1451,11 @@ class assign_sensor(QMainWindow):    #
             
             ########################################################################################################################################
 
-        except Exception as e:
-            print(e)
+        except:
             notification_win.label.setText("Nie udalo się dodać przypisania.\nWybrany czujnik może już być przypisany do innego pacjenta.\n\nUsuń przypisanie i spróbuj ponownie.")
             notification_win.show()
             cnx.rollback()
+            pass
         
 
     def pushButtonDeleteClicked(self):
@@ -1657,7 +1493,7 @@ class assign_sensor(QMainWindow):    #
             
                 cursor.execute(query) #Execute the Query
                 cnx.commit()
-                print("Usunieto czujnik z bazy.")
+                # print("Usunieto czujnik z bazy.")
                 ######################################### potrzebne do rejestru zdarzen
                 
                 wybrany_czujnik = self.chooseToEditComboBox.currentText()
@@ -1692,8 +1528,8 @@ class assign_sensor(QMainWindow):    #
 
                 cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
                 ID_pracownika = cursor.fetchall()[0][0]
-                # print("Wyswietlanie ID pracownika na podstawie loginu...")
-                # print(ID_pracownika)
+                # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                # # print(ID_pracownika)
                 
                 query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
                 taxi = (ID_pracownika, "Usunieto przypisanie czujnika, MAC: {jaki_mac} , pacjent: {jakie_imie} {jakie_nazwisko}, ".format(jaki_mac=MAC_assigned,jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
@@ -1707,23 +1543,7 @@ class assign_sensor(QMainWindow):    #
                 notification_win.label.setText("Wystapil problem podczas usuwania przypisania. Sprawdz czy pacjent zostal wybrany.")
                 notification_win.show()
                 cnx.rollback()
-            
-        else:
 
-            print("")
-
-# delete_patient_confirm NIE JEST UZYWANY, zamiast tego uzyto QMessageBox, nieoptymalny bo nie ma polskich napisow, tylko Yes, No, ale dziala
-# class delete_patient_confirm(QMainWindow):
-#     def __init__(self):
-#         QMainWindow.__init__(self)
-#         loadUi('delete_patient_confirm.ui', self)
-        
-#         self.pushButtonDelete.clicked.connect(self.pushButtonDeleteClicked)
-#         self.pushButtonAbort.clicked.connect(self.pushButtonAbortClicked)
-#     def pushButtonDeleteClicked(self):
-#         edit_patient.confirmed = 1
-#     def pushButtonAbortClicked(self):
-#         delete_confirm_window.hide() # edit_patient_window
     
 class new_user(QMainWindow):    #
     
@@ -1762,7 +1582,7 @@ class new_user(QMainWindow):    #
         data_zatrudnienia = self.hireDateLineEdit.text()
         login = self.loginLineEdit.text()
         zaszyfrowane_haslo = encrypt_string(self.passwordLineEdit.text()) # zamiana hasla jawnego na hash
-        print(zaszyfrowane_haslo) # TODO # mozna skasowac, wyswietlenie kontrolne
+        # print(zaszyfrowane_haslo) # TODO # mozna skasowac, wyswietlenie kontrolne
         telefon = self.nameLineEdit.text()
         email = self.emailLineEdit.text()
         kod_pocztowy = self.cityCodeLineEdit.text()
@@ -1779,7 +1599,7 @@ class new_user(QMainWindow):    #
         try:
             cursor.execute(query, taxi) #Execute the Query
             cnx.commit()
-            print("Dodano nowego pracownika.")
+            # print("Dodano nowego pracownika.")
             self.nameLineEdit.setText("")
             self.surnameLineEdit.setText("")
             # self.sexLineEdit.setText("")
@@ -1804,8 +1624,8 @@ class new_user(QMainWindow):    #
             
             cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
             ID_pracownika = cursor.fetchall()[0][0]
-            # print("Wyswietlanie ID pracownika na podstawie loginu...")
-            # print(ID_pracownika)
+            # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # # print(ID_pracownika)
             
             query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
             taxi = (ID_pracownika, "Dodano pracownika {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=imie,jakie_nazwisko=nazwisko), "")
@@ -1816,7 +1636,7 @@ class new_user(QMainWindow):    #
             ########################################################################################################################################
             new_user_window.hide()
         except:
-            print("Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.")
+            # print("Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.")
             cnx.rollback()
         
 
@@ -1859,8 +1679,8 @@ class edit_user(QMainWindow):    #
         cursor.execute("SELECT zaszyfrowane_haslo FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=login)) #Execute the Query
         myresult = cursor.fetchall()    # przeczytany hasz wlasciwego hasla # zakomentowac oba wiersze
         myresult = myresult[0][0]
-        # print(myresult) # kontrolnie, pokazanie HASZU hasla z bazy
-        # print(oldPass)
+        # # print(myresult) # kontrolnie, pokazanie HASZU hasla z bazy
+        # # print(oldPass)
         
         if myresult==oldPass:
             if newPass==newPassRepeat:
@@ -1883,8 +1703,8 @@ class edit_user(QMainWindow):    #
                     imie_i_nazwisko = cursor.fetchall()
                     wybrane_imie = imie_i_nazwisko[0][0]
                     wybrane_nazwisko = imie_i_nazwisko[0][1]
-                    # print("Wyswietlanie ID pracownika na podstawie loginu...")
-                    # print(ID_pracownika)
+                    # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                    # # print(ID_pracownika)
                     
                     query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
                     taxi = (ID_pracownika, "Zmieniono haslo pracownika {jakie_imie} {jakie_nazwisko}".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
@@ -1913,39 +1733,37 @@ class edit_user(QMainWindow):    #
         worker = Worker()
         self.threadpool.start(worker) 
         
-        print("Wybor pracownikow... ")
+        # print("Wybor pracownikow... ")
 
         seekToEdit = self.filterToEditLineEdit.text()
-        print(seekToEdit)
+        # print(seekToEdit)
         try:
             cursor.execute("SELECT imie, nazwisko FROM personel WHERE imie LIKE BINARY \'%{seek}%\' OR nazwisko LIKE BINARY \'%{seek}%\' OR ID_pracownika LIKE BINARY \'%{seek}%\'".format(seek=seekToEdit))
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             pracownicy = []
             for x in myresult:
                         pracownicy.append(str(x[0])+" "+str(x[1]))
             self.userToEditComboBox.addItems(pracownicy)
             ###################################################################
         except:
-            print("SELECT query failed")
-
-        
+            pass        
     
     def pushButtonLoadToEditUserClicked(self):
         
         worker = Worker()
         self.threadpool.start(worker) 
         
-        print("Ladowanie danych pracownika... ")
+        # print("Ladowanie danych pracownika... ")
 
         # seekHist = self.filterToEditLineEdit.text()
-        # print(seekHist)
+        # # print(seekHist)
         wybrany_pracownik = self.userToEditComboBox.currentText()
         try:
             wybrany_pracownik = wybrany_pracownik.split()
@@ -1957,12 +1775,12 @@ class edit_user(QMainWindow):    #
             cursor.execute("SELECT imie, nazwisko, plec, data_urodzenia, PESEL, data_zatrudnienia, telefon, email, kod_pocztowy, miejscowosc, ulica FROM personel WHERE imie LIKE \'%{imie}%\' AND nazwisko LIKE \'%{nazwisko}%\'".format(imie=wybrane_imie, nazwisko=wybrane_nazwisko))
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             # pacjenci = []
             for x in myresult:
                 # pacjenci.append(str(x[0])+" "+str(x[1]))
@@ -1985,7 +1803,7 @@ class edit_user(QMainWindow):    #
                 self.streetLineEdit.setText(str(x[10]))
             ###################################################################
         except:
-            print("SELECT query failed")
+            pass
 
     def pushButtonAbortClicked(self):
         edit_patient_window.hide()
@@ -2031,7 +1849,7 @@ class edit_user(QMainWindow):    #
         try:
             cursor.execute(query) #Execute the Query
             cnx.commit()
-            print("Zmieniono dane pracownika.")
+            # print("Zmieniono dane pracownika.")
             # Czyszczenie wprowadzonego tekstu
             self.nameLineEdit.setText("")
             self.surnameLineEdit.setText("")
@@ -2055,8 +1873,8 @@ class edit_user(QMainWindow):    #
             
             cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
             ID_pracownika = cursor.fetchall()[0][0]
-            # print("Wyswietlanie ID pracownika na podstawie loginu...")
-            # print(ID_pracownika)
+            # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # # print(ID_pracownika)
             
             query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
             taxi = (ID_pracownika, "Zmieniono dane pracownika {jakie_imie} {jakie_nazwisko}".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
@@ -2097,7 +1915,7 @@ class edit_user(QMainWindow):    #
         # w zamysle po potwierdzeniu usuniecia w oknie delete_confirm_window powinno sie zamknac to okno i kontynuowac operacje ponizej czyli usuniecie pacjenta
         confirmed = 1
         # delete_confirm_window.show()
-        print("Polaczono z baza danych...")
+        # print("Polaczono z baza danych...")
         qm = QMessageBox
         ret = qm.question(self,'', "Czy na pewno chcesz usunąć tego pracownika?", qm.Yes | qm.No)
         
@@ -2118,7 +1936,7 @@ class edit_user(QMainWindow):    #
             
                 cursor.execute(query) #Execute the Query
                 cnx.commit()
-                print("Usunieto pracownika.")
+                # print("Usunieto pracownika.")
                 # Czyszczenie wprowadzonego tekstu
                 self.nameLineEdit.setText("")
                 self.surnameLineEdit.setText("")
@@ -2142,8 +1960,8 @@ class edit_user(QMainWindow):    #
             
                 cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
                 ID_pracownika = cursor.fetchall()[0][0]
-                # print("Wyswietlanie ID pracownika na podstawie loginu...")
-                # print(ID_pracownika)
+                # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                # # print(ID_pracownika)
                 
                 query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
                 taxi = (ID_pracownika, "Usunieto pracownika {jakie_imie} {jakie_nazwisko}".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
@@ -2157,10 +1975,6 @@ class edit_user(QMainWindow):    #
                 notification_win.label.setText("Wystapil problem podczas usuwania pracownika. Sprawdz czy pracownik zostal wybrany.")
                 notification_win.show()
                 cnx.rollback()
-            
-        else:
-
-            print("")
 
 class auth(QMainWindow): #   OKNO LOGOWANIA DO APLIKACJI   ######   PO POMYSLNEJ AUTORYZACJI POKAZUJE SIE GLOWNE OKNO PROGRAMU
     def __init__(self):
@@ -2171,8 +1985,8 @@ class auth(QMainWindow): #   OKNO LOGOWANIA DO APLIKACJI   ######   PO POMYSLNEJ
         self.abortButton.clicked.connect(self.abortButtonClicked)
         self.passwordLineEdit.setEchoMode(QtWidgets.QLineEdit.Password)
         ################################################################## DO TESTOW ##### POZNIEJ SKASOWAC TE LINIE # TODO
-        self.loginLineEdit.setText("admin")
-        self.passwordLineEdit.setText("admin")
+        # self.loginLineEdit.setText("admin")
+        # self.passwordLineEdit.setText("admin")
         
         self.threadpool = QThreadPool()
         
@@ -2191,7 +2005,7 @@ class auth(QMainWindow): #   OKNO LOGOWANIA DO APLIKACJI   ######   PO POMYSLNEJ
                 cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
                 result0 = cnx
                 cursor = cnx.cursor()
-                print("...Connection established...")
+                # print("...Connection established...")
             except:
                 notification_win.label.setText("Blad polaczenia. Sprawdz czy serwer bazy danych jest uruchomiony.")
                 notification_win.show()
@@ -2200,21 +2014,21 @@ class auth(QMainWindow): #   OKNO LOGOWANIA DO APLIKACJI   ######   PO POMYSLNEJ
             cursor.execute("SELECT zaszyfrowane_haslo FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=login)) #Execute the Query
             myresult = cursor.fetchall()    # przeczytany hasz wlasciwego hasla # zakomentowac oba wiersze
             myresult = myresult[0][0]
-            # print(myresult) # kontrolnie, pokazanie HASZU hasla z bazy
-            # print(encrypt_string(password))
+            # # print(myresult) # kontrolnie, pokazanie HASZU hasla z bazy
+            # # print(encrypt_string(password))
             
             if myresult==encrypt_string(password):
                 window.show()
                 auth_win.hide()
-                print("Logowanie pomyslne.")
+                # print("Logowanie pomyslne.")
                 window.current_user = login
                 
                 ###################### #log #rejestr #zdarzenie ########################################################################################
 
                 cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
                 ID_pracownika = cursor.fetchall()[0][0]
-                # print("Wyswietlanie ID pracownika na podstawie loginu...")
-                # print(ID_pracownika)
+                # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                # # print(ID_pracownika)
                 
                 query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
                 taxi = (ID_pracownika, "pomyslne logowanie", "")
@@ -2224,7 +2038,7 @@ class auth(QMainWindow): #   OKNO LOGOWANIA DO APLIKACJI   ######   PO POMYSLNEJ
                 
                 ########################################################################################################################################
         except:
-            print("Login attempt failed.")
+            # print("Login attempt failed.")
             notification_win.label.setText("Niepoprawny login lub hasło.")
             notification_win.show()
             
@@ -2291,46 +2105,45 @@ class python_to_arduino_msg(QMainWindow):    #
         worker = Worker()
         self.threadpool.start(worker) 
         
-        print("Wybor pacjentow... ")
+        # print("Wybor pacjentow... ")
 
         seekToEdit = self.filterToEditLineEdit.text()
-        print(seekToEdit)
+        # print(seekToEdit)
         try:
             cursor.execute("SELECT pac.imie, pac.nazwisko, prz.ID_czujnika FROM pacjenci pac JOIN przydzial_czujnikow prz ON pac.ID_pacjenta=prz.ID_pacjenta WHERE pac.imie LIKE BINARY \'%{seek}%\' OR pac.nazwisko LIKE BINARY \'%{seek}%\' OR pac.ID_pacjenta LIKE BINARY \'%{seek}%\'".format(seek=seekToEdit))
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
-            print("...SELECT query succeeded...")
+            # print("...SELECT query succeeded...")
             
             # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
             
             myresult = cursor.fetchall()
-            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            # # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
             pacjenci = []
             for x in myresult:
                         pacjenci.append(str(x[0])+" "+str(x[1])+" czujnik: "+str(x[2]))
             self.patientToEditComboBox.addItems(pacjenci)
             ###################################################################
         except:
-            print("SELECT query failed")
-
+            pass
     
     def pushButtonSendClicked(self):
         
-        print("Wysylanie wiadomosci... ")
+        # print("Wysylanie wiadomosci... ")
         
         worker = Worker()
         self.threadpool.start(worker) 
 
         # seekHist = self.filterToEditLineEdit.text()
-        # print(seekHist)
+        # # print(seekHist)
         wybrany_komunikat = self.msgComboBox.currentText()
         pelny_komunikat = wybrany_komunikat
         try:
             wybrany_komunikat = wybrany_komunikat.split()
             wybrane_id_komunikatu = wybrany_komunikat[0]
-        except Exception as e: print(e)
-            # pass
-        print("Wybrane ID komunikatu: "+wybrane_id_komunikatu)
+        except:
+            pass
+        # print("Wybrane ID komunikatu: "+wybrane_id_komunikatu)
         
         ser.close()
         board = Arduino(port)
@@ -2359,8 +2172,8 @@ class python_to_arduino_msg(QMainWindow):    #
             
             cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
             ID_pracownika = cursor.fetchall()[0][0]
-            # print("Wyswietlanie ID pracownika na podstawie loginu...")
-            # print(ID_pracownika)
+            # # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # # print(ID_pracownika)
             
             query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
             taxi = (ID_pracownika, "Wysłano komunikat nr "+str(pelny_komunikat)+" do czujnika należącego do pacjenta "+(jaki_pacjent[0])+" "+(jaki_pacjent[1]), "")
@@ -2372,8 +2185,8 @@ class python_to_arduino_msg(QMainWindow):    #
 
             ###
             self.wybrane_id_czujnika_pacjenta = wybrany_pacjent[3]
-        except Exception as e: print(e)
-            # pass
+        except:
+            pass
         if self.wybrane_id_czujnika_pacjenta==1:
             board.digital[13].write(1)
         elif self.wybrane_id_czujnika_pacjenta==2:
@@ -2402,11 +2215,8 @@ class python_to_arduino_msg(QMainWindow):    #
             board.digital[10].write(1)
             board.digital[12].write(1)
         
-            
-        
         board.exit()
         ser.open()
-        
         
 if __name__ == '__main__':
         
@@ -2433,6 +2243,5 @@ if __name__ == '__main__':
     
     python_to_arduino_msg_win = python_to_arduino_msg()
         
-    
     # new_user_window = new_user()
     sys.exit(app.exec_())
