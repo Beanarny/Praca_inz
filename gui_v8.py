@@ -1,39 +1,105 @@
 import sys
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import pyqtSlot, QTime, QDate
-from PyQt5.QtWidgets import QApplication, QDialog, QMainWindow, QWidget, QSlider, QTimeEdit, QDateEdit
-from PyQt5.QtWidgets import QMessageBox
+# from PyQt5.QtCore import pyqtSlot, QTime, QDate, QTimer
+# from PyQt5.QtWidgets import QApplication, QDialog, QMainWindow, QWidget, QSlider, QTimeEdit, QDateEdit
+# from PyQt5.QtWidgets import QMessageBox
 from PyQt5.uic import loadUi
 from time import sleep
 import csv
 import mysql.connector
+import serial
 import datetime
 import matplotlib.pyplot as plt
-import numpy as np
 import time
 import winsound
-import ctypes
+
 import queue
 import hashlib
 import pandas as pd
+import numpy as np
 import matplotlib.dates as mdates
 from datetime import datetime
 from PyQt5.QtWidgets import QGridLayout, QSizePolicy
+import pyqtgraph as pg
+from random import randint
+
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+
+import datetime
+
+import time
+import traceback, sys
+
+import logging
+
+from pyfirmata import Arduino
+
+
+
+
+
+########################################################################
+
+result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
+while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
+    try:
+          # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
+        cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
+        result = cnx
+        print("...Connection established...")
+    except:
+        print("Connection failed")
+        pass
+cursor = cnx.cursor(buffered=True)
+
+#######################################################################
+
+port = "COM3"
+
+ser = serial.Serial(port, 9600)   # open serial port that Arduino is using
+
+ser.timeout=0.1
+
+########################################################################
 
 def encrypt_string(hash_string):
     sha_signature = \
         hashlib.sha256(hash_string.encode()).hexdigest()
     return sha_signature
 
+#################################################################
+
+
+   
+#############################################################
+
+class Worker(QRunnable):
+
+    def __init__(self, *args, **kwargs):
+        super(Worker, self).__init__()
+
+        # Store constructor arguments (re-used for processing)
+        self.args = args
+        self.kwargs = kwargs 
+     
+    @pyqtSlot()
+    def run(self):
+        '''
+        Initialise the runner function with passed args, kwargs.
+        '''
+
 #############################################################
 
 class main_window(QMainWindow): # MAIN WINDOW
-    def __init__(self):
-            QMainWindow.__init__(self)
+    def __init__(self, *args, **kwargs):
+            super(main_window, self).__init__(*args, **kwargs)
             loadUi('gui_v4.ui', self)
             self.setWindowTitle("System monitorowania ruchu pacjentow")
-            self.pushButtonBegin.clicked.connect(self.pushButtonBeginClicked)    # zmienic hello na cos innego
-            self.pushButtonInsert.clicked.connect(self.pushButtonInsertClicked)
+            self.pushButtonObserve.clicked.connect(self.pushButtonObserveClicked)    # zmienic hello na cos innego
+            # self.pushButtonInsert.clicked.connect(self.pushButtonInsertClicked)
+            self.pushButtonBegin.clicked.connect(self.pushButtonBeginClicked)
             self.newPatientButton.clicked.connect(self.newPatientButtonClicked)
             self.newUserButton.clicked.connect(self.newUserButtonClicked)
             self.rangeSlider.setMinimum(10) # 10 sekund
@@ -51,40 +117,302 @@ class main_window(QMainWindow): # MAIN WINDOW
             self.newSensorButton.clicked.connect(self.newSensorButtonClicked)
             self.editSensorButton.clicked.connect(self.editSensorButtonClicked)
             self.assignSensorPushButton.clicked.connect(self.assignSensorPushButtonClicked)
+            self.sendMsgPushButton.clicked.connect(self.sendMsgPushButtonClicked)
+            self.pushButtonCleanEvents.clicked.connect(self.pushButtonCleanEventsClicked)
+            
+            self.threadpool = QThreadPool()
+            
+            self.current_user = None
+    # do Begin dodac rowniez wykrywanie upadku i bezdechu
+    def pushButtonCleanEventsClicked(self):
+        
+        worker = Worker()
+        self.threadpool.start(worker)
+        
+        qm = QMessageBox
+        ret = qm.question(self,'', "Czy na pewno chcesz wyczyscić listę zdarzeń?\n\n*zdarzenia można później wczytać z bazy danych", qm.Yes | qm.No)
+        
+        if ret == qm.Yes:
+            self.eventList.clear()
+    
+    def sendMsgPushButtonClicked(self):
+        
+        python_to_arduino_msg_win.show()
+        
+        worker = Worker()
+        self.threadpool.start(worker)
+        
+    def pushButtonBeginClicked(self):
+        print("Rozpoczęto wczytywanie danych z monitora szeregowego...")
+        notification_win.label.setText("\nRozpoczęto monitoring.\n")
+        notification_win.show()
+        self.counter = 0
+        # -------------------------- dotyczy wykrywania --> UPADKU <-- pacjentow ---------------------------------------------
+        self.dict_id_to_alarmvalue = {}
+        ###################### #log #rejestr #zdarzenie ########################################################################################
+        
+        print("login: ",self.current_user)
+        cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=self.current_user))
+        ID_pracownika = cursor.fetchall()[0][0]
+        # print("Wyswietlanie ID pracownika na podstawie loginu...")
+        # print(ID_pracownika)
+        
+        query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+        taxi = (ID_pracownika, "rozpoczecie pomiaru", "")
+        cursor.execute(query, taxi)
+        cnx.commit()
+        self.eventList.insertItem(0, "rozpoczecie pomiaru, "+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        ########################################################################################################################################
+        # stworzenie Dictionary (slownika) z ID_czujnika przypisanymi do okr. pacjentow i wart. alar. tych pacj.
+        cursor.execute("SELECT prz.ID_czujnika, pac.wartosc_alarmowa\
+                        FROM przydzial_czujnikow prz\
+                        JOIN pacjenci pac\
+                        ON prz.ID_pacjenta = pac.ID_pacjenta;")
+        print("...SELECT query succeeded...")
+        myresult = cursor.fetchall()
+        for x in myresult:
+            print(x[0],x[1])
+            self.dict_id_to_alarmvalue[str(x[0])] = str(x[1])
+        # uzycie slownika: dict_id_to_alarmvalue[ID_czujnika] zwraca wartosc alarmowa
+        #---------------------------------------------------------------------------------------------------------------------
+        # ########################## dotyczy wykrywania --> BEZDECHU <-- pacjentow ###########################################
+        arr_5s = np.linspace(100.01,101.50,150) # stworzenie wektora 151 wartosci, 1. wart. to ID czujnika, pozostale 150 to ostatnie wart. pomiarow
+        self.df_sekw_bezdechu = 100*[arr_5s] # stworzenie df, gdzie kazdy numer wiersza oznacza ID czujnika, a wartosci w tym wierszu to kolejne pobrane pomiary
+        ######################################################################################################################
+        def execute_single_import():
+            try:
+                temp = ser.readline().decode('utf-8')
+                temp=str(temp)
+                temp = temp.split()
+                # print(temp)
+                
+                query = ("INSERT INTO pomiary (ID_czujnika, modul, x_axis, y_axis, z_axis) VALUES (%s, %s, %s, %s, %s)")
+                taxi = (temp[0], temp[1], temp[2], temp[3], temp[4])
+                cursor.execute(query, taxi)
+                
+                id_czujnika = temp[0]
+                mod = temp[1]
+                x_value = temp[2]
+                
+                ###################################### dopisanie pomiaru do listy i sprawdzenie czy nie ma bezdechu, czyli czy max-min<0,3 przez 5[s]
+
+                self.df_sekw_bezdechu[int(id_czujnika)] = np.roll(self.df_sekw_bezdechu[int(id_czujnika)],1) # przesuniecie listy pomiarow w prawo
+                self.df_sekw_bezdechu[int(id_czujnika)][0] = float(x_value)
+                np.set_printoptions(precision=2)
+                np.set_printoptions(suppress=True)
+                print(self.df_sekw_bezdechu[int(id_czujnika)])
+                max_value = np.max(self.df_sekw_bezdechu[int(id_czujnika)])
+                min_value = np.min(self.df_sekw_bezdechu[int(id_czujnika)])
+                # print("max: {maxv}, min: {minv}, x_value: {x}".format(maxv=str(max_value),minv=str(min_value),x=x_value))
+                if (max_value-min_value)<0.03:
+                    cursor.execute("SELECT pac.imie, pac.nazwisko\
+                                        FROM pacjenci pac\
+                                            JOIN przydzial_czujnikow prz ON pac.ID_pacjenta=prz.ID_pacjenta\
+                                                JOIN czujniki czu ON prz.ID_czujnika=czu.ID_czujnika\
+                                                    WHERE czu.ID_czujnika={jakie_id};".format(jakie_id=temp[0]))
+                    myresult = cursor.fetchall()
+                    imie = myresult[0][0]
+                    nazwisko = myresult[0][1]
+                    
+                    notification_win.label.setText("\nPacjent {jakie_imie} {jakie_nazwisko} nie wykazuje aktywnosci. Podejrzenie bezdechu.\n".format(jakie_imie=imie,jakie_nazwisko=nazwisko))
+                    notification_win.show()
+                    self.df_sekw_bezdechu[int(id_czujnika)] = arr_5s # wypelnienie sekwencji nie-bezdechem, aby zapobiec "spamowi" komunikatow o bezdechu
+                    ###################### #log #rejestr #zdarzenie ########################################################################################
+
+                    cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+                    ID_pracownika = cursor.fetchall()[0][0]
+                    # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                    # print(ID_pracownika)
+                    
+                    query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+                    taxi = (ID_pracownika, "Bezdech - {jakie_imie} {jakie_nazwisko}".format(jakie_imie=imie,jakie_nazwisko=nazwisko), "")
+                    cursor.execute(query, taxi)
+                    cnx.commit()
+                    window.eventList.insertItem(0, "Bezdech - {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=imie,jakie_nazwisko=nazwisko)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    
+                    ########################################################################################################################################
+
+                ###################################### sprawdzenie czy pacjent upadl
+                #jesli modul przekroczy wartosc alar. otrzymana po podaniu ID_czujnika do slownika przechowujacego wart. alarmowe
+                try:
+                    # jezeli zmierzona wartosc modulu, czyli temp[1], jest wieksza niz wartosc alarmowa dla tego ID_czujnika, czyli slownik( temp[0] )
+                    if (float(mod)>float(self.dict_id_to_alarmvalue[str(id_czujnika)])):
+                        
+                        cursor.execute("SELECT pac.imie, pac.nazwisko\
+                                       FROM pacjenci pac\
+                                           JOIN przydzial_czujnikow prz ON pac.ID_pacjenta=prz.ID_pacjenta\
+                                               JOIN czujniki czu ON prz.ID_czujnika=czu.ID_czujnika\
+                                                   WHERE czu.ID_czujnika={jakie_id};".format(jakie_id=temp[0]))
+                        myresult = cursor.fetchall()
+                        imie = myresult[0][0]
+                        nazwisko = myresult[0][1]
+
+                        print("Pacjent X Y upadl.")
+                        notification_win.label.setText("\nPacjent {jakie_imie} {jakie_nazwisko} upadl.\n".format(jakie_imie=imie,jakie_nazwisko=nazwisko))
+                        notification_win.show()
+
+                        print("mod = "+str(float(temp[1]))+", dict_id_to_alarmvalue value = "+self.dict_id_to_alarmvalue [str(x[0])])
+                        print("taxi: ",taxi)
+                        ###################### #log #rejestr #zdarzenie ########################################################################################
+
+                        cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+                        ID_pracownika = cursor.fetchall()[0][0]
+                        # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                        # print(ID_pracownika)
+                        
+                        query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+                        taxi = (ID_pracownika, "Upadek - {jakie_imie} {jakie_nazwisko}".format(jakie_imie=imie,jakie_nazwisko=nazwisko), "")
+                        cursor.execute(query, taxi)
+                        cnx.commit()
+                        window.eventList.insertItem(0, "Upadek - {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=imie,jakie_nazwisko=nazwisko)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                        
+                        ########################################################################################################################################
+                except:
+                    pass
+                ######################################
+                
+                # if temp[1]>wartosc_graniczna_dla_danego_pacjenta
+                
+                # print("INSERT wykonany poprawnie")
+                self.counter = self.counter + 1
+                # print("counter zwiekszony, counter = ", self.counter)
+                if ((self.counter%100)==0):
+                    cnx.commit()
+                    self.counter=0
+                    print("Zaimportowano 100 rekordow. Wykonano commit w bazie danych.")
+            except:
+                pass
+                #Exception as e: print(e)
+                # print("Jeden pomiar nie został zaimportowany. Pomiar moze byc niepoprawny. \n")
+                # pass
+    
+        self.timer = QTimer()
+        self.timer.setInterval(10)
+        self.timer.timeout.connect(lambda: execute_single_import())
+        self.timer.start()
+        
+    ############################################# funkcja TESTOWA, import pliku .txt z pomiarami do bazy danych
+    # def pushButtonInsertClicked(self):
+
+    #     print("Writing .txt to SQL...")
+                
+    #     #Load text file into list with CSV module
+    #     with open(r"C:\Users\matsz\Documents\original_kopia\Refactored_Py_DS_ML_Bootcamp-master\03-Python-for-Data-Analysis-Pandas/kuba - oddech 45 sekund, bezdech 30 sekund.TXT", "rt") as f:
+    #         reader = csv.reader(f, delimiter = ' ', skipinitialspace=True)
+    #         lineData = list()
+    #         cols = next(reader)
+        
+    #         for line in reader:
+    #             if line != []:
+    #                 lineData.append(line)
+                
+    #     # Writing Query to insert data
+    #     query = ("INSERT INTO pomiary (ID_czujnika, modul, x_axis, y_axis, z_axis) VALUES (%s, %s, %s, %s, %s)")
+        
+    #     #Change every item in the sub list into the correct data type and store it in a directory
+    #     serie_bezdechu = pd.DataFrame()
+    #     # ta petla for z zalozenia CHYBA nie pozwala na "wyjscie z niej do GUI", zeby pozwolic na interakcje
+    #     # musi sie skonczyc cala petla zeby program w ogole ruszyl
+    #     # for i in range(len(lineData)):
+    #     #     try:
+                
+    #     #         taxi = (1, lineData[i][0], lineData[i][1], lineData[i][2], lineData[i][3]) # zamiast jedynki mozna wrzucic zmienna pobraną z pola EditText (trzeba takie dodać) gdzie uzytkownik wpisze numer czujnika z palca LUB jego ID
+    #     def execute_and_pop(lista):
+    #         taxi = (1, str(lista[0][0]), str(lista[0][1]), str(lista[0][2]), str(lista[0][3]))
+    #         try:
+    #             cursor.execute(query, taxi)
+    #             lista.pop(0)
+    #             cnx.commit()
+    #         except:
+    #             print("Błędny pomiar")
+    #             print(taxi)
+    #     self.timer = QTimer()
+    #     self.timer.setInterval(1)
+    #     self.timer.timeout.connect(lambda: execute_and_pop(lineData))
+    #     self.timer.start()
+    #     # cursor.execute(query, taxi) #Execute the Query
+    #     # print(taxi)
+    #     # sleep(0.03)
+    #     # self.timer = QTimer()
+    #     # self.timer.setInterval(1000)
+    #     # self.timer.timeout.connect(self.showHistoryButtonClicked)
+    #     # self.timer.start()
+    #     # if lineData[i][0]>2.5:
+    #     # if (i%1000)==0 and (i>0):
+    #     #     print("1000" + " rows inserted, please wait...")
+        
+    #         # except:
+    #         #     print("Błędny pomiar")
+    #         #     print(taxi)
+    #     print("Import finished.")
+    #     #Commit the query
+    #     cnx.commit()
+###########################################################################################################################
+    #         self.graphWidget = pg.PlotWidget()
+    #         self.setCentralWidget(self.graphWidget)
+    
+    #         self.x = list(range(100))  # 100 time points
+    #         self.y = [randint(0,100) for _ in range(100)]  # 100 data points
+    
+    #         self.graphWidget.setBackground('w')
+    
+    #         pen = pg.mkPen(color=(255, 0, 0))
+    #         self.data_line =  self.graphWidget.plot(self.x, self.y, pen=pen)
+    #         self.timer = QTimer()
+    #         self.timer.setInterval(50)
+    #         self.timer.timeout.connect(self.update_plot_data)
+    #         self.timer.start()
+    #         ##################################################################################################
+    # def update_plot_data(self):
+
+    #     self.x = self.x[1:]  # Remove the first y element.
+    #     self.x.append(self.x[-1] + 1)  # Add a new value 1 higher than the last.
+    
+    #     self.y = self.y[1:]  # Remove the first 
+    #     self.y.append( randint(0,100))  # Add a new random value.
+    
+    #     self.data_line.setData(self.x, self.y)  # Update the data.
 #############################################################################################################################
-    @pyqtSlot()
+
 ###################################################### Wczytywanie pacjentow z bazy do Comboboxa Historii
     def assignSensorPushButtonClicked(self):
         assign_sensor_window.show()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
 
     def editSensorButtonClicked(self):
         edit_sensor_window.show()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
 
     def newSensorButtonClicked(self):
         new_sensor_window.show()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
 
     def editPatientButtonClicked(self):
         edit_patient_window.show()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
 
     def editUserButtonClicked(self):
         edit_user_window.show()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
 
     def pushButtonFilterHistoryPatientClicked(self):
         self.patientHistoryComboBox.clear()
         
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         print("Wybor pacjentow... ")
-                #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+
         seekHist = self.filterHistoryLineEdit.text()
         print(seekHist)
         try:
@@ -105,24 +433,16 @@ class main_window(QMainWindow): # MAIN WINDOW
         except:
             print("SELECT query failed")
 
-        cnx.close()
+        
     
     def pushButtonFilterLivePatientClicked(self):
         self.patientLiveComboBox.clear()
+        worker = Worker()
+        self.threadpool.start(worker) 
         
         print("Wybor pacjentow... ")
                 #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+
         seekLive = self.filterLiveLineEdit.text()
         print(seekLive)
         try:
@@ -143,10 +463,12 @@ class main_window(QMainWindow): # MAIN WINDOW
         except:
             print("SELECT query failed")
     
-        cnx.close()
+        
         
     def showHistoryButtonClicked(self):
         print("showHistoryButtonClicked")
+        worker = Worker()
+        self.threadpool.start(worker) 
         
         timeFrom = QTime()
         timeTo = QTime()
@@ -170,18 +492,7 @@ class main_window(QMainWindow): # MAIN WINDOW
 ###################################################### Odczytywanie czasu z widgetow ^^^^^^^^^^^^^^^
         
         print("Drukowanie wykresu HISTORII wybranego pacjenta...")
-        #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+
         print(dateTimeFrom)
         print(dateTimeTo)
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! WAZNE
@@ -237,29 +548,22 @@ class main_window(QMainWindow): # MAIN WINDOW
             plt.show()
         except:
             print("SELECT query failed")
-            ctypes.windll.user32.MessageBoxW(0, "Niepowodzenie wyswietlania wykresu. Nie wybrano pacjenta lub nie udało się połączyć z bazą danych.", "Informacja", 0)
-
-        cnx.close()
+            notification_win.label.setText("Niepowodzenie wyswietlania wykresu. Nie wybrano pacjenta lub nie udało się połączyć z bazą danych. \n\nUpewnij się, czy kliknięto przycisk Filtruj.")
+            notification_win.show()
+        
 ############################################################## Rysowanie wykresu z historii ^^^^^^^^^^^^^^ @ UP
         
     def v_change(self):
         value = str(self.rangeSlider.value())
         self.sliderValueLineEdit.setText(value)
+        worker = Worker()
+        self.threadpool.start(worker) 
         
-    def pushButtonBeginClicked(self):    # funkcja testowa, usunac lub wymienic na inna
+    def pushButtonObserveClicked(self):    # funkcja testowa, usunac lub wymienic na inna
         print("Drukowanie wykresu...")
-        #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                 # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+        worker = Worker()
+        self.threadpool.start(worker) 
+
         # dodatkowo uzaleznic wyswietlane rekordy od wybranego pacjenta, imienia, MAC czujnika, ID pacjenta czy cokolwiek # TODO #
         # na podstawie slidera okreslic zakres --> dac zamiast 10000 przeskalowana wartosc
         if int(self.sliderValueLineEdit.text()) < 10 or int(self.sliderValueLineEdit.text()) > 3000:
@@ -318,69 +622,29 @@ class main_window(QMainWindow): # MAIN WINDOW
         except:
             print("SELECT query failed")
             self.currentPersonLabel.setText("---")
-            ctypes.windll.user32.MessageBoxW(0, "Niepowodzenie wyswietlania wykresu. Nie wybrano pacjenta lub nie udało się połączyć z bazą danych.", "Informacja", 0)
-
-        cnx.close()
+            notification_win.label.setText("Niepowodzenie wyswietlania wykresu. Nie wybrano pacjenta lub nie udało się połączyć z bazą danych. \n\nUpewnij się, czy kliknięto przycisk Filtruj.")
+            notification_win.show()
+        
         
 #######################################################################################################################
-    def pushButtonInsertClicked(self):
-            #ctypes.windll.user32.MessageBoxW(0, "Trwa wczytywanie danych prosze czekac", "Informacja", 1)
-        print("Writing .txt to SQL...")
-        #Load text file into list with CSV module
-        with open(r"C:\Users\matsz\Documents\original_kopia\Refactored_Py_DS_ML_Bootcamp-master\03-Python-for-Data-Analysis-Pandas/kuba - oddech 45 sekund, bezdech 30 sekund.TXT", "rt") as f:
-            reader = csv.reader(f, delimiter = ' ', skipinitialspace=True)
-            lineData = list()
-            cols = next(reader)
+
         
-            for line in reader:
-                if line != []:
-                    lineData.append(line)
         
-        #Connect with database
-        
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
-        
-        #Writing Query to insert data
-        query = ("INSERT INTO pomiary (ID_czujnika, modul, x_axis, y_axis, z_axis) VALUES (%s, %s, %s, %s, %s)")
-        
-        #Change every item in the sub list into the correct data type and store it in a directory
-        serie_bezdechu = pd.DataFrame()
-        for i in range(len(lineData)):
-            try:
-                taxi = (1, lineData[i][0], lineData[i][1], lineData[i][2], lineData[i][3]) # zamiast jedynki mozna wrzucic zmienna pobraną z pola EditText (trzeba takie dodać) gdzie uzytkownik wpisze numer czujnika z palca LUB jego ID
-                cursor.execute(query, taxi) #Execute the Query
-                sleep(0.03)
-                # if lineData[i][0]>2.5:
-                    # ctypes.windll.user32.MessageBoxW(0, "PACJENT UPADL, WYMAGANA INTERWENCJA !", "Informacja", 1)
-                if (i%1000)==0 and (i>0):
-                    print("1000" + " rows inserted, please wait...")
-        
-            except:
-                print("Błędny pomiar")
-                print(taxi)
-        print("Import finished.")
-        #Commit the query
-        cnx.commit()
-        
-        cnx.close()
 ######################################################################################## funkcje otwierajace nowe okna po kliknieciu przycisku w glownym GUI
     def newPatientButtonClicked(self):
         print("Adding new patient...")
         new_patient_window.show()
         
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
     def newUserButtonClicked(self):
         print("Adding new user...")
         new_user_window.show()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+
 
 class new_patient(QMainWindow):    #
 
@@ -393,14 +657,24 @@ class new_patient(QMainWindow):    #
         self.pushButtonAbort.clicked.connect(self.pushButtonAbortClicked)
         self.birthDateLineEdit.setPlaceholderText("RRRR-MM-DD")
         self.emailLineEdit.setPlaceholderText("email@address.com")
-    @pyqtSlot()
+        
+        self.sexComboBox.addItem("Mężczyzna")
+        self.sexComboBox.addItem("Kobieta")
+        
+        self.threadpool = QThreadPool()
+        
+
     def pushButtonAbortClicked(self):
         new_patient_window.hide()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
     def pushButtonAddClicked(self):
         
         imie = self.nameLineEdit.text()
         nazwisko = self.surnameLineEdit.text()
-        plec = self.sexLineEdit.text()
+        # plec = self.sexLineEdit.text()
+        plec = self.sexComboBox.currentText()
         data_urodzenia = self.birthDateLineEdit.text()
         PESEL = self.peselLineEdit.text()        
         telefon = self.phoneLineEdit.text()
@@ -408,43 +682,57 @@ class new_patient(QMainWindow):    #
         kod_pocztowy = self.cityCodeLineEdit.text()
         miejscowosc = self.cityLineEdit.text()
         ulica = self.streetLineEdit.text()
+        wartosc_alarmowa = self.alarmValueLineEdit.text()
         
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         #Writing Query to insert data
-        query = ("INSERT INTO pacjenci (imie, nazwisko, plec, data_urodzenia, PESEL, telefon, email, kod_pocztowy, miejscowosc, ulica) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)")
+        query = ("INSERT INTO pacjenci (imie, nazwisko, plec, data_urodzenia, PESEL, telefon, email, kod_pocztowy, miejscowosc, ulica, wartosc_alarmowa) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)")
         
-        taxi = (imie, nazwisko, plec, data_urodzenia, PESEL ,telefon, email, kod_pocztowy, miejscowosc, ulica) # zamiast jedynki mozna wrzucic zmienna pobraną z pola EditText (trzeba takie dodać) gdzie uzytkownik wpisze numer czujnika z palca LUB jego ID
+        taxi = (imie, nazwisko, plec, data_urodzenia, PESEL ,telefon, email, kod_pocztowy, miejscowosc, ulica, wartosc_alarmowa) # zamiast jedynki mozna wrzucic zmienna pobraną z pola EditText (trzeba takie dodać) gdzie uzytkownik wpisze numer czujnika z palca LUB jego ID
         try:
             cursor.execute(query, taxi) #Execute the Query
             cnx.commit()
             print("Dodano nowego pacjenta.")
             # Czyszczenie wprowadzonego tekstu
-            imie = self.nameLineEdit.setText("")
-            nazwisko = self.surnameLineEdit.setText("")
-            plec = self.sexLineEdit.setText("")
-            data_urodzenia = self.birthDateLineEdit.setText("")
-            PESEL = self.peselLineEdit.setText("")        
-            telefon = self.phoneLineEdit.setText("")
-            email = self.emailLineEdit.setText("")
-            kod_pocztowy = self.cityCodeLineEdit.setText("")
-            miejscowosc = self.cityLineEdit.setText("")
-            ulica = self.streetLineEdit.setText("")
-            ctypes.windll.user32.MessageBoxW(0, "Dodano nowego pacjenta.", "Informacja", 0)
+            self.nameLineEdit.setText("")
+            self.surnameLineEdit.setText("")
+            # self.sexLineEdit.setText("") # zmienić na combobox?, nie, comboboxa plci NIE TRZEBA czyscic !!!
+            self.sexComboBox.clear()
+            self.sexComboBox.addItem("Mężczyzna")
+            self.sexComboBox.addItem("Kobieta")
+            self.birthDateLineEdit.setText("")
+            self.peselLineEdit.setText("")        
+            self.phoneLineEdit.setText("")
+            self.emailLineEdit.setText("")
+            self.cityCodeLineEdit.setText("")
+            self.cityLineEdit.setText("")
+            self.streetLineEdit.setText("")
+            self.alarmValueLineEdit.setText("")
+            notification_win.label.setText("Dodano nowego pacjenta.")
+            notification_win.show()
             # TODO # zarejestrowac ta akcje w logach zdarzen
+            ###################### #log #rejestr #zdarzenie ########################################################################################
+            
+            cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+            ID_pracownika = cursor.fetchall()[0][0]
+            # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # print(ID_pracownika)
+            
+            query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+            taxi = (ID_pracownika, "Dodanie pacjenta {jakie_imie} {jakie_nazwisko}".format(jakie_imie=imie,jakie_nazwisko=nazwisko), "")
+            cursor.execute(query, taxi)
+            cnx.commit()
+            window.eventList.insertItem(0, "Dodanie pacjenta {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=imie,jakie_nazwisko=nazwisko)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            ########################################################################################################################################
+            new_patient_window.hide()
         except:
-            ctypes.windll.user32.MessageBoxW(0, "Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.", "Informacja", 0)
+            notification_win.label.setText("Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.")
+            notification_win.show()
             cnx.rollback()
-        cnx.close()
+        
 
 class edit_patient(QMainWindow):    #
 
@@ -460,24 +748,18 @@ class edit_patient(QMainWindow):    #
         self.pushButtonFilterEditPatient.clicked.connect(self.pushButtonFilterEditPatientClicked)
         self.pushButtonLoadToEditPatient.clicked.connect(self.pushButtonLoadToEditPatientClicked)
         self.pushButtonDeletePatient.clicked.connect(self.pushButtonDeletePatientClicked)
-    
+        
+        self.threadpool = QThreadPool()
+
     def pushButtonFilterEditPatientClicked(self):
         # Filtrowanie pacjentow
         self.patientToEditComboBox.clear()
         
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         print("Wybor pacjentow... ")
-                #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+
         seekToEdit = self.filterToEditLineEdit.text()
         print(seekToEdit)
         try:
@@ -498,23 +780,15 @@ class edit_patient(QMainWindow):    #
         except:
             print("SELECT query failed")
 
-        cnx.close()
+        
     
     def pushButtonLoadToEditPatientClicked(self):
         
         print("Ladowanie danych pacjenta... ")
-        #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+
         # seekHist = self.filterToEditLineEdit.text()
         # print(seekHist)
         wybrany_pacjent = self.patientToEditComboBox.currentText()
@@ -525,7 +799,7 @@ class edit_patient(QMainWindow):    #
         except:
             pass
         try:
-            cursor.execute("SELECT imie, nazwisko, plec, data_urodzenia, PESEL, telefon, email, kod_pocztowy, miejscowosc, ulica FROM pacjenci WHERE imie LIKE \'%{imie}%\' AND nazwisko LIKE \'%{nazwisko}%\'".format(imie=wybrane_imie, nazwisko=wybrane_nazwisko))
+            cursor.execute("SELECT imie, nazwisko, plec, data_urodzenia, PESEL, telefon, email, kod_pocztowy, miejscowosc, ulica, wartosc_alarmowa FROM pacjenci WHERE imie LIKE \'%{imie}%\' AND nazwisko LIKE \'%{nazwisko}%\'".format(imie=wybrane_imie, nazwisko=wybrane_nazwisko))
             # usunac przedrostek BINARY, jezeli sie chce case_insensitive
             # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
             print("...SELECT query succeeded...")
@@ -539,7 +813,13 @@ class edit_patient(QMainWindow):    #
                 # pacjenci.append(str(x[0])+" "+str(x[1]))
                 self.nameLineEdit.setText(str(x[0]))
                 self.surnameLineEdit.setText(str(x[1]))
-                self.sexLineEdit.setText(str(x[2]))
+                # self.sexLineEdit.setText(str(x[2]))
+                self.sexComboBox.clear()
+                self.sexComboBox.addItem(str(x[2]))
+                if self.sexComboBox.currentText()[0]=="M":
+                    self.sexComboBox.addItem("Kobieta")
+                else:
+                    self.sexComboBox.addItem("Mezczyzna")
                 self.birthDateLineEdit.setText(str(x[3]))
                 self.peselLineEdit.setText(str(x[4]))     
                 self.phoneLineEdit.setText(str(x[5]))
@@ -547,20 +827,26 @@ class edit_patient(QMainWindow):    #
                 self.cityCodeLineEdit.setText(str(x[7]))
                 self.cityLineEdit.setText(str(x[8]))
                 self.streetLineEdit.setText(str(x[9]))
+                self.alarmValueLineEdit.setText(str(x[10]))
             ###################################################################
         except:
             print("SELECT query failed")
 
-        cnx.close()
+        
     
-    @pyqtSlot()
+
     def pushButtonAbortClicked(self):
         edit_patient_window.hide()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
     def pushButtonSaveChangesClicked(self):
         
         noweImie = self.nameLineEdit.text()
         noweNazwisko = self.surnameLineEdit.text()
-        nowaPlec = self.sexLineEdit.text()
+        # nowaPlec = self.sexLineEdit.text()
+        nowaPlec = self.sexComboBox.currentText()
         nowaData_urodzenia = self.birthDateLineEdit.text()
         nowyPESEL = self.peselLineEdit.text()        
         nowyTelefon = self.phoneLineEdit.text()
@@ -568,18 +854,11 @@ class edit_patient(QMainWindow):    #
         nowyKod_pocztowy = self.cityCodeLineEdit.text()
         nowaMiejscowosc = self.cityLineEdit.text()
         nowaUlica = self.streetLineEdit.text()
+        nowaWartoscAlarmowa = self.alarmValueLineEdit.text()
         
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         #Writing Query to insert data
         # Przekazanie, ktora osoba ma zostac edytowana do buttona potwierdzajacego i wykonujacego UPDATE
         # Pobranie tych danych z aktualnego ComboBoxa
@@ -592,20 +871,21 @@ class edit_patient(QMainWindow):    #
             pass
         
         query = ("UPDATE pacjenci SET imie=\'{imie2}\', nazwisko=\'{nazwisko2}\', plec=\'{plec2}\', data_urodzenia=\'{data_urodzenia2}\', PESEL=\'{PESEL2}\',\
-                 telefon=\'{telefon2}\', email=\'{email2}\', kod_pocztowy=\'{kod_pocztowy2}\', miejscowosc=\'{miejscowosc2}\', ulica=\'{ulica2}\' WHERE imie LIKE\
+                 telefon=\'{telefon2}\', email=\'{email2}\', kod_pocztowy=\'{kod_pocztowy2}\', miejscowosc=\'{miejscowosc2}\', ulica=\'{ulica2}\', wartosc_alarmowa=\'{wartosc_alarmowa2}\' WHERE imie LIKE\
                      \'{jakie_imie}\' AND nazwisko LIKE '\{jakie_nazwisko}\'".format(imie2=noweImie,nazwisko2=noweNazwisko,plec2=nowaPlec,\
                          data_urodzenia2=nowaData_urodzenia,PESEL2=nowyPESEL,telefon2=nowyTelefon,email2=nowyEmail,kod_pocztowy2=nowyKod_pocztowy,\
-                             miejscowosc2=nowaMiejscowosc,ulica2=nowaUlica,jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko))
+                             miejscowosc2=nowaMiejscowosc,ulica2=nowaUlica,wartosc_alarmowa2=nowaWartoscAlarmowa,jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko))
         
         # taxi = (imie, nazwisko, plec, data_urodzenia, PESEL ,telefon, email, kod_pocztowy, miejscowosc, ulica) # zamiast jedynki mozna wrzucic zmienna pobraną z pola EditText (trzeba takie dodać) gdzie uzytkownik wpisze numer czujnika z palca LUB jego ID
         try:
             cursor.execute(query) #Execute the Query
             cnx.commit()
-            print("Dodano nowego pacjenta.")
+            print("Zmieniono dane pacjenta.")
             # Czyszczenie wprowadzonego tekstu
             self.nameLineEdit.setText("")
             self.surnameLineEdit.setText("")
-            self.sexLineEdit.setText("")
+            # self.sexLineEdit.setText("")
+            self.sexComboBox.clear()
             self.birthDateLineEdit.setText("")
             self.peselLineEdit.setText("")        
             self.phoneLineEdit.setText("")
@@ -613,26 +893,37 @@ class edit_patient(QMainWindow):    #
             self.cityCodeLineEdit.setText("")
             self.cityLineEdit.setText("")
             self.streetLineEdit.setText("")
-            ctypes.windll.user32.MessageBoxW(0, "Zmieniono dane pacjenta.", "Informacja", 0)
+            self.alarmValueLineEdit.setText("")
+            
+            notification_win.label.setText("Zmieniono dane pacjenta.")
+            notification_win.show()
             # TODO # zarejestrowac ta akcje w logach zdarzen
+            ###################### #log #rejestr #zdarzenie ########################################################################################
+            
+            cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+            ID_pracownika = cursor.fetchall()[0][0]
+            # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # print(ID_pracownika)
+            
+            query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+            taxi = (ID_pracownika, "Zmiana danych pacjenta {jakie_imie} {jakie_nazwisko}".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
+            cursor.execute(query, taxi)
+            cnx.commit()
+            window.eventList.insertItem(0, "Zmiana danych pacjenta {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            ########################################################################################################################################
+
         except:
-            ctypes.windll.user32.MessageBoxW(0, "Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.", "Informacja", 0)
+            notification_win.label.setText("Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.")
+            notification_win.show()
             cnx.rollback()
-        cnx.close()
+        
 
     def pushButtonDeletePatientClicked(self):
         
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         #Writing Query to insert data
         # Przekazanie, ktora osoba ma zostac edytowana do buttona potwierdzajacego i wykonujacego UPDATE
         # Pobranie tych danych z aktualnego ComboBoxa
@@ -663,11 +954,12 @@ class edit_patient(QMainWindow):    #
             
                 cursor.execute(query) #Execute the Query
                 cnx.commit()
-                print("Usunieto pacjenta.")
+                print("Usunieto pacjenta {jakie_imie} {jakie_nazwisko}.".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko))
                 # Czyszczenie wprowadzonego tekstu
                 self.nameLineEdit.setText("")
                 self.surnameLineEdit.setText("")
-                self.sexLineEdit.setText("")
+                # self.sexLineEdit.setText("")
+                self.sexComboBox.clear()
                 self.birthDateLineEdit.setText("")
                 self.peselLineEdit.setText("")        
                 self.phoneLineEdit.setText("")
@@ -675,12 +967,32 @@ class edit_patient(QMainWindow):    #
                 self.cityCodeLineEdit.setText("")
                 self.cityLineEdit.setText("")
                 self.streetLineEdit.setText("")
-                ctypes.windll.user32.MessageBoxW(0, "Usunieto pacjenta.", "Informacja", 0)
+                
+                ###################### #log #rejestr #zdarzenie ########################################################################################
+                
+                cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+                ID_pracownika = cursor.fetchall()[0][0]
+                # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                # print(ID_pracownika)
+                
+                query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+                taxi = (ID_pracownika, "Usuniecie pacjenta {jakie_imie} {jakie_nazwisko}".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
+                cursor.execute(query, taxi)
+                cnx.commit()
+                window.eventList.insertItem(0, "Usuniecie pacjenta {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                
+                ########################################################################################################################################
+
+                
+                notification_win.label.setText("Usunieto pacjenta {jakie_imie} {jakie_nazwisko}.".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko))
+                notification_win.show()
                 # TODO # zarejestrowac ta akcje w logach zdarzen
-            except:
-                ctypes.windll.user32.MessageBoxW(0, "Wystapil problem podczas usuwania pacjenta. Sprawdz czy pacjent zostal wybrany.", "Informacja", 0)
+            except Exception as e:
+                print(e)
+                notification_win.label.setText("Wystapil problem podczas usuwania pacjenta. Sprawdz czy pacjent zostal wybrany.")
+                notification_win.show()
                 cnx.rollback()
-            cnx.close()
+            
         else:
 
             print("")
@@ -695,24 +1007,23 @@ class new_sensor(QMainWindow):    #
         self.pushButtonAddDefaultID.clicked.connect(self.pushButtonAddDefaultIDClicked)
         self.pushButtonAbort.clicked.connect(self.pushButtonAbortClicked)
         self.macLineEdit.setPlaceholderText("AABBCCDDEEFF")
-    @pyqtSlot()
+        
+        self.threadpool = QThreadPool()
+        
+
     def pushButtonAbortClicked(self):
         new_patient_window.hide()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
     def pushButtonAddDefaultIDClicked(self):
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
         
         mac_address = self.macLineEdit.text()
         
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
         #Writing Query to insert data
         query = ("INSERT INTO czujniki (MAC_czujnika) VALUES (\'{jaki_mac}\')".format(jaki_mac=mac_address))
         
@@ -725,29 +1036,40 @@ class new_sensor(QMainWindow):    #
             self.macLineEdit.setText("")
             self.sensorIDLineEdit.setText("")
 
-            ctypes.windll.user32.MessageBoxW(0, "Dodano nowy czujnik.", "Informacja", 0)
+            notification_win.label.setText("Dodano nowy czujnik.")
+            notification_win.show()
             # TODO # zarejestrowac ta akcje w logach zdarzen
+            ###################### #log #rejestr #zdarzenie ########################################################################################
+            
+            cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+            ID_pracownika = cursor.fetchall()[0][0]
+            # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # print(ID_pracownika)
+            
+            query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+            taxi = (ID_pracownika, "Dodano czujnik, MAC: {jaki_mac}".format(jaki_mac=mac_address), "")
+            cursor.execute(query, taxi)
+            cnx.commit()
+            window.eventList.insertItem(0, "Dodano czujnik, MAC: {jaki_mac}, ".format(jaki_mac=mac_address)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            ########################################################################################################################################
+
+            
+            new_sensor_window.hide()
         except:
-            ctypes.windll.user32.MessageBoxW(0, "Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.", "Informacja", 0)
+            notification_win.label.setText("Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.")
+            notification_win.show()
             # TODO zmienic komunikat, optymalnie wymusic znaki 0-9, A-F
             cnx.rollback()
-        cnx.close()
+        
     def pushButtonAddClicked(self):
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
         
         mac_address = self.macLineEdit.text()
         sensor_id = self.sensorIDLineEdit.text()
         
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
         #Writing Query to insert data
         query = ("INSERT INTO czujniki (ID_czujnika, MAC_czujnika) VALUES (\'{jakie_id}\', \'{jaki_mac}\')".format(jakie_id = sensor_id,jaki_mac=mac_address))
         
@@ -760,17 +1082,36 @@ class new_sensor(QMainWindow):    #
             self.macLineEdit.setText("")
             self.sensorIDLineEdit.setText("")
 
-            ctypes.windll.user32.MessageBoxW(0, "Dodano nowy czujnik.", "Informacja", 0)
+            notification_win.label.setText("Dodano nowy czujnik.")
+            notification_win.show()
+            
             # TODO # zarejestrowac ta akcje w logach zdarzen
+            ###################### #log #rejestr #zdarzenie ########################################################################################
+            
+            cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+            ID_pracownika = cursor.fetchall()[0][0]
+            # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # print(ID_pracownika)
+            
+            query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+            taxi = (ID_pracownika, "Dodano czujnik, MAC: {jaki_mac}".format(jaki_mac=mac_address), "")
+            cursor.execute(query, taxi)
+            cnx.commit()
+            window.eventList.insertItem(0, "Dodano czujnik, MAC: {jaki_mac}, ".format(jaki_mac=mac_address)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            ########################################################################################################################################
+            new_sensor_window.hide()
         except:
-            ctypes.windll.user32.MessageBoxW(0, "Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.", "Informacja", 0)
+            notification_win.label.setText("Nie udało się dodać czujnika.\nPodane ID czujnika może już istnieć w bazie danych.")
+            notification_win.show()
             # TODO zmienic komunikat, optymalnie wymusic znaki 0-9, A-F
             cnx.rollback()
-        cnx.close()
+        
 
 class edit_sensor(QMainWindow):    #
 
     def __init__(self):
+        
         QMainWindow.__init__(self)
         loadUi('edit_sensor_gui.ui', self)
         self.setWindowTitle("Edytowanie danych czujnika")
@@ -784,24 +1125,20 @@ class edit_sensor(QMainWindow):    #
         sizePolicy = QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
         self.pushButtonDelete.setSizePolicy(sizePolicy)
         
+        self.threadpool = QThreadPool()
+        
+        self.previous_mac = "Default mac string"
     
     def pushButtonFilterClicked(self):
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         # Filtrowanie pacjentow
         self.chooseToEditComboBox.clear()
         
         print("Wybor czujnika... ")
-                #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+
         seekToEdit = self.filterToEditLineEdit.text()
         print(seekToEdit)
         try:
@@ -828,27 +1165,19 @@ class edit_sensor(QMainWindow):    #
             for x in myresult:
                         czujniki.append(str(x[0])+" "+str(x[1])+" "+str(x[2])+" "+str(x[3]))
             self.chooseToEditComboBox.addItems(czujniki)
-
+            
         except:
             print("SELECT query failed")
 
-        cnx.close()
+        
     
     def pushButtonLoadClicked(self):
         
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         print("Ladowanie danych czujnika... ")
-        #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+
         # seekHist = self.filterToEditLineEdit.text()
         # print(seekHist)
         wybrany_czujnik = self.chooseToEditComboBox.currentText()
@@ -875,28 +1204,25 @@ class edit_sensor(QMainWindow):    #
             ###################################################################
         except:
             print("SELECT query failed")
+        self.previous_mac = self.macLineEdit.text()
 
-        cnx.close()
+        
     
-    @pyqtSlot()
+
     def pushButtonAbortClicked(self):
         edit_patient_window.hide()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
     def pushButtonSaveChangesClicked(self):
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
         
         noweID = self.idLineEdit.text()
         nowyMAC = self.macLineEdit.text()
 
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
         #Writing Query to insert data
         # Przekazanie, ktora osoba ma zostac edytowana do buttona potwierdzajacego i wykonujacego UPDATE
         # Pobranie tych danych z aktualnego ComboBoxa
@@ -918,27 +1244,38 @@ class edit_sensor(QMainWindow):    #
             # Czyszczenie wprowadzonego tekstu
             self.idLineEdit.setText("")
             self.macLineEdit.setText("")
+            
+            self.pushButtonFilterClicked()
 
-            ctypes.windll.user32.MessageBoxW(0, "Zmieniono dane czujnika.", "Informacja", 0)
+            notification_win.label.setText("Zmieniono dane czujnika.")
+            notification_win.show()
             # TODO # zarejestrowac ta akcje w logach zdarzen
+            ###################### #log #rejestr #zdarzenie ########################################################################################
+            
+            cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+            ID_pracownika = cursor.fetchall()[0][0]
+            # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # print(ID_pracownika)
+            
+            query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+            taxi = (ID_pracownika, "Zmiana MAC czujnika z {stary_mac} na {jaki_mac}".format(stary_mac=self.previous_mac, jaki_mac=nowyMAC), "")
+            cursor.execute(query, taxi)
+            cnx.commit()
+            window.eventList.insertItem(0, "Zmiana MAC czujnika z {stary_mac} na {jaki_mac}, ".format(stary_mac=self.previous_mac, jaki_mac=nowyMAC)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            ########################################################################################################################################
+
         except:
-            ctypes.windll.user32.MessageBoxW(0, "Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.", "Informacja", 0)
+            notification_win.label.setText("Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.")
+            notification_win.show()
             cnx.rollback()
-        cnx.close()
+        
 
     def pushButtonDeleteClicked(self):
         
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         #Writing Query to insert data
         # Przekazanie, ktora osoba ma zostac edytowana do buttona potwierdzajacego i wykonujacego UPDATE
         # Pobranie tych danych z aktualnego ComboBoxa
@@ -956,8 +1293,10 @@ class edit_sensor(QMainWindow):    #
             try:
                 wybrany_czujnik = self.chooseToEditComboBox.currentText()
                 
+                
                 wybrany_czujnik = wybrany_czujnik.split()
                 wybrane_id = wybrany_czujnik[0]
+                mac_usuwanego_czujnika = wybrany_czujnik[1]
                 
                 
                 query = ("DELETE FROM czujniki WHERE ID_czujnika={jakie_id}".\
@@ -968,17 +1307,36 @@ class edit_sensor(QMainWindow):    #
             
                 cursor.execute(query) #Execute the Query
                 cnx.commit()
-                print("Usunieto czujnik z bazy.")
+                print("Usunieto czujnik z bazy, MAC: {jaki_mac}.".format(jaki_mac=mac_usuwanego_czujnika))
                 # Czyszczenie wprowadzonego tekstu
                 self.idLineEdit.setText("")
                 self.macLineEdit.setText("")
+                
+                self.pushButtonFilterClicked()
 
-                ctypes.windll.user32.MessageBoxW(0, "Usunieto czujnik z bazy.", "Informacja", 0)
+                notification_win.label.setText("Usunieto czujnik z bazy danych. MAC: {jaki_mac}.".format(jaki_mac=mac_usuwanego_czujnika))
+                notification_win.show()
                 # TODO # zarejestrowac ta akcje w logach zdarzen
+                ###################### #log #rejestr #zdarzenie ########################################################################################
+            
+                cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+                ID_pracownika = cursor.fetchall()[0][0]
+                # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                # print(ID_pracownika)
+                
+                query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+                taxi = (ID_pracownika, "Usunieto czujnik, MAC: {jaki_mac}".format(jaki_mac=mac_usuwanego_czujnika), "")
+                cursor.execute(query, taxi)
+                cnx.commit()
+                window.eventList.insertItem(0, "Usunieto czujnik, MAC: {jaki_mac}, ".format(jaki_mac=mac_usuwanego_czujnika)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                
+                ########################################################################################################################################
+
             except:
-                ctypes.windll.user32.MessageBoxW(0, "Wystapil problem podczas usuwania czujnika. Sprawdz czy pacjent zostal wybrany.", "Informacja", 0)
+                notification_win.label.setText("Wystapil problem podczas usuwania czujnika. Sprawdz czy pacjent zostal wybrany.")
+                notification_win.show()
                 cnx.rollback()
-            cnx.close()
+            
         else:
 
             print("")
@@ -998,23 +1356,21 @@ class assign_sensor(QMainWindow):    #
         sizePolicy = QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
         self.pushButtonDelete.setSizePolicy(sizePolicy)
         
+        self.threadpool = QThreadPool()
+        
+        self.MAC_assigned = "Replace with ID..."
+        self.assigned_to_name = "Replace with name"
+        self.assigned_to_surname = "Replace with surname"
+        
     def pushButtonFilterClicked(self):
         # Filtrowanie pacjentow
         self.chooseToEditComboBox.clear()
         
         print("Wybor czujnika... ")
-                #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+
         seekToEdit = self.filterToEditLineEdit.text()
         print(seekToEdit)
         try:
@@ -1045,25 +1401,17 @@ class assign_sensor(QMainWindow):    #
         except:
             print("SELECT query failed")
 
-        cnx.close()
+        
     
     def pushButtonFilterEditPatientClicked(self):
         # Filtrowanie pacjentow
         self.patientToEditComboBox.clear()
         
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         print("Wybor pacjentow... ")
-                #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+
         seekToEdit = self.filterPatientLineEdit.text()
         print(seekToEdit)
         try:
@@ -1084,44 +1432,45 @@ class assign_sensor(QMainWindow):    #
         except:
             print("SELECT query failed")
 
-        cnx.close()
+        
     
     def pushButtonAbortClicked(self):
         edit_patient_window.hide()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
     def pushButtonAssignClicked(self):
         
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         #Writing Query to insert data
         # Przekazanie, ktora osoba ma zostac edytowana do buttona potwierdzajacego i wykonujacego UPDATE
         # Pobranie tych danych z aktualnego ComboBoxa
         
         wybrany_czujnik = self.chooseToEditComboBox.currentText()
         wybrany_pacjent = self.patientToEditComboBox.currentText()
+        # do ustawienia comboboxow na okreslonych elementach, po wykonaniu zmian
+        id_of_assigned = self.chooseToEditComboBox.currentIndex()
+        id_of_chosen_patient = self.patientToEditComboBox.currentIndex()
+        
         try:
             wybrany_czujnik = wybrany_czujnik.split()
             wybrane_id = wybrany_czujnik[0]
+            
+            MAC_assigned = wybrany_czujnik[1]
             
             wybrany_pacjent = wybrany_pacjent.split()
             wybrane_id_pacjenta = wybrany_pacjent[0]
             wybrane_imie = wybrany_pacjent[1]
             wybrane_nazwisko = wybrany_pacjent[2]
-            
+                        
             print("Udalo sie odczytac dane z ComboBoxow")
         except:
             pass
         
-        query = ("INSERT INTO przydzial_czujnikow (ID_pacjenta,ID_czujnika,status)\
-                 VALUES ({ID_pacjenta_2},{ID_czujnika_2},'default')"\
+        query = ("INSERT INTO przydzial_czujnikow (ID_pacjenta,ID_czujnika,status) VALUES ({ID_pacjenta_2},{ID_czujnika_2},'default')"\
                      .format(ID_pacjenta_2=wybrane_id_pacjenta,ID_czujnika_2=wybrane_id))
         print("query: "+query)
         # taxi = (imie, nazwisko, plec, data_urodzenia, PESEL ,telefon, email, kod_pocztowy, miejscowosc, ulica) # zamiast jedynki mozna wrzucic zmienna pobraną z pola EditText (trzeba takie dodać) gdzie uzytkownik wpisze numer czujnika z palca LUB jego ID
@@ -1132,27 +1481,42 @@ class assign_sensor(QMainWindow):    #
             # Czyszczenie wprowadzonego tekstu
             self.filterToEditLineEdit.setText("")
             self.filterPatientLineEdit.setText("")
+            
+            self.pushButtonFilterClicked()
+            self.chooseToEditComboBox.setCurrentIndex(id_of_assigned)
+            
+            self.pushButtonFilterEditPatientClicked()
+            self.patientToEditComboBox.setCurrentIndex(id_of_chosen_patient)
 
-            ctypes.windll.user32.MessageBoxW(0, "Dodano nowe przypisanie.", "Informacja", 0)
+            notification_win.label.setText("Dodano nowe przypisanie.")
+            notification_win.show()
             # TODO # zarejestrowac ta akcje w logach zdarzen
-        except:
-            ctypes.windll.user32.MessageBoxW(0, "Nie udalo się dodać przypisania. Wybrany czujnik może już być przypisany do innego pacjenta. Usuń przypisanie i spróbuj ponownie.", "Informacja", 0)
+            ###################### #log #rejestr #zdarzenie ########################################################################################
+            
+            cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+            ID_pracownika = cursor.fetchall()[0][0]
+            # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # print(ID_pracownika)
+            
+            query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+            taxi = (ID_pracownika, "Przypisano czujnik, MAC: {jaki_mac} pacjentowi {jakie_imie} {jakie_nazwisko}, ".format(jaki_mac=MAC_assigned,jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
+            cursor.execute(query, taxi)
+            cnx.commit()
+            window.eventList.insertItem(0, "Przypisano czujnik, MAC: {jaki_mac} pacjentowi {jakie_imie} {jakie_nazwisko}, ".format(jaki_mac=MAC_assigned,jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            ########################################################################################################################################
+
+        except Exception as e:
+            print(e)
+            notification_win.label.setText("Nie udalo się dodać przypisania.\nWybrany czujnik może już być przypisany do innego pacjenta.\n\nUsuń przypisanie i spróbuj ponownie.")
+            notification_win.show()
             cnx.rollback()
-        cnx.close()
+        
 
     def pushButtonDeleteClicked(self):
         
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
+        worker = Worker()
+        self.threadpool.start(worker)
         #Writing Query to insert data
         # Przekazanie, ktora osoba ma zostac edytowana do buttona potwierdzajacego i wykonujacego UPDATE
         # Pobranie tych danych z aktualnego ComboBoxa
@@ -1173,6 +1537,8 @@ class assign_sensor(QMainWindow):    #
                 wybrany_czujnik = wybrany_czujnik.split()
                 wybrane_id = wybrany_czujnik[0]
                 
+                id_of_deleted = self.chooseToEditComboBox.currentIndex()
+                id_of_chosen_patient = self.patientToEditComboBox.currentIndex()
                 
                 query = ("DELETE FROM przydzial_czujnikow WHERE ID_czujnika={jakie_id}".\
                           format(jakie_id=int(wybrane_id)))
@@ -1183,32 +1549,72 @@ class assign_sensor(QMainWindow):    #
                 cursor.execute(query) #Execute the Query
                 cnx.commit()
                 print("Usunieto czujnik z bazy.")
+                ######################################### potrzebne do rejestru zdarzen
+                
+                wybrany_czujnik = self.chooseToEditComboBox.currentText()
+                wybrany_pacjent = self.patientToEditComboBox.currentText()
+                try:
+                    wybrany_czujnik = wybrany_czujnik.split()
+                    wybrane_id = wybrany_czujnik[0]
+                    
+                    MAC_assigned = wybrany_czujnik[1]
+                    
+                    wybrany_pacjent = wybrany_pacjent.split()
+                    wybrane_id_pacjenta = wybrany_pacjent[0]
+                    wybrane_imie = wybrany_pacjent[1]
+                    wybrane_nazwisko = wybrany_pacjent[2]
+                except:
+                    pass
+                
+                #########################################
                 # Czyszczenie wprowadzonego tekstu
                 self.filterToEditLineEdit.setText("")
                 self.filterPatientLineEdit.setText("")
+                
+                self.pushButtonFilterClicked()
+                self.chooseToEditComboBox.setCurrentIndex(id_of_deleted)
+                self.pushButtonFilterEditPatientClicked()
+                self.patientToEditComboBox.setCurrentIndex(id_of_chosen_patient)
 
-                ctypes.windll.user32.MessageBoxW(0, "Usunieto przypisanie z bazy.", "Informacja", 0)
+                notification_win.label.setText("Usunieto przypisanie z bazy.")
+                notification_win.show()
                 # TODO # zarejestrowac ta akcje w logach zdarzen
+                ###################### #log #rejestr #zdarzenie ########################################################################################
+
+                cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+                ID_pracownika = cursor.fetchall()[0][0]
+                # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                # print(ID_pracownika)
+                
+                query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+                taxi = (ID_pracownika, "Usunieto przypisanie czujnika, MAC: {jaki_mac} , pacjent: {jakie_imie} {jakie_nazwisko}, ".format(jaki_mac=MAC_assigned,jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
+                cursor.execute(query, taxi)
+                cnx.commit()
+                window.eventList.insertItem(0, "Usunieto przypisanie czujnika, MAC: {jaki_mac} , pacjent: {jakie_imie} {jakie_nazwisko}, ".format(jaki_mac=MAC_assigned,jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                
+                ########################################################################################################################################
+
             except:
-                ctypes.windll.user32.MessageBoxW(0, "Wystapil problem podczas usuwania przypisania. Sprawdz czy pacjent zostal wybrany.", "Informacja", 0)
+                notification_win.label.setText("Wystapil problem podczas usuwania przypisania. Sprawdz czy pacjent zostal wybrany.")
+                notification_win.show()
                 cnx.rollback()
-            cnx.close()
+            
         else:
 
             print("")
 
 # delete_patient_confirm NIE JEST UZYWANY, zamiast tego uzyto QMessageBox, nieoptymalny bo nie ma polskich napisow, tylko Yes, No, ale dziala
-class delete_patient_confirm(QMainWindow):
-    def __init__(self):
-        QMainWindow.__init__(self)
-        loadUi('delete_patient_confirm.ui', self)
+# class delete_patient_confirm(QMainWindow):
+#     def __init__(self):
+#         QMainWindow.__init__(self)
+#         loadUi('delete_patient_confirm.ui', self)
         
-        self.pushButtonDelete.clicked.connect(self.pushButtonDeleteClicked)
-        self.pushButtonAbort.clicked.connect(self.pushButtonAbortClicked)
-    def pushButtonDeleteClicked(self):
-        edit_patient.confirmed = 1
-    def pushButtonAbortClicked(self):
-        delete_confirm_window.hide()
+#         self.pushButtonDelete.clicked.connect(self.pushButtonDeleteClicked)
+#         self.pushButtonAbort.clicked.connect(self.pushButtonAbortClicked)
+#     def pushButtonDeleteClicked(self):
+#         edit_patient.confirmed = 1
+#     def pushButtonAbortClicked(self):
+#         delete_confirm_window.hide() # edit_patient_window
     
 class new_user(QMainWindow):    #
     
@@ -1222,39 +1628,41 @@ class new_user(QMainWindow):    #
         self.hireDateLineEdit.setPlaceholderText("RRRR-MM-DD")
         self.emailLineEdit.setPlaceholderText("email@address.com")
         self.passwordLineEdit.setEchoMode(QtWidgets.QLineEdit.Password)
+        
+        self.sexComboBox.addItem("Mężczyzna")
+        self.sexComboBox.addItem("Kobieta")
         # TODO # wymagac od loginu minimum 5 znakow, od hasla optymalnie 8+ znakow i A-Z, a-z, 0-9
-    @pyqtSlot()
+        
+        self.threadpool = QThreadPool()
+        
+
     def pushButtonAbortClicked(self):
         new_patient_window.hide()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
     def pushButtonAddClicked(self):
         
         imie = self.nameLineEdit.text()
         nazwisko = self.surnameLineEdit.text()
-        plec = self.sexLineEdit.text()
+        # plec = self.sexLineEdit.text()
+        plec = self.sexComboBox.currentText()
         data_urodzenia = self.birthDateLineEdit.text()
         PESEL = self.peselLineEdit.text()
         data_zatrudnienia = self.hireDateLineEdit.text()
         login = self.loginLineEdit.text()
-        haslo = self.passwordLineEdit.text() # TODO # trzeba dodac zaslanianie hasla i pewnie nie bedzie tak latwo
-        zaszyfrowane_haslo = encrypt_string(haslo)
-        print(zaszyfrowane_haslo)
+        zaszyfrowane_haslo = encrypt_string(self.passwordLineEdit.text()) # zamiana hasla jawnego na hash
+        print(zaszyfrowane_haslo) # TODO # mozna skasowac, wyswietlenie kontrolne
         telefon = self.nameLineEdit.text()
         email = self.emailLineEdit.text()
         kod_pocztowy = self.cityCodeLineEdit.text()
         miejscowosc = self.cityLineEdit.text()
         ulica = self.streetLineEdit.text()
         
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         #Writing Query to insert data
         query = ("INSERT INTO personel (imie, nazwisko, plec, data_urodzenia, PESEL, data_zatrudnienia, login, zaszyfrowane_haslo, telefon, email, kod_pocztowy, miejscowosc, ulica) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)")
         
@@ -1265,7 +1673,10 @@ class new_user(QMainWindow):    #
             print("Dodano nowego pracownika.")
             self.nameLineEdit.setText("")
             self.surnameLineEdit.setText("")
-            self.sexLineEdit.setText("")
+            # self.sexLineEdit.setText("")
+            self.sexComboBox.clear()
+            self.sexComboBox.addItem("Mężczyzna")
+            self.sexComboBox.addItem("Kobieta")
             self.birthDateLineEdit.setText("")
             self.peselLineEdit.setText("")
             self.hireDateLineEdit.setText("")
@@ -1276,12 +1687,29 @@ class new_user(QMainWindow):    #
             self.cityCodeLineEdit.setText("")
             self.cityLineEdit.setText("")
             self.streetLineEdit.setText("")
-            ctypes.windll.user32.MessageBoxW(0, "Dodano nowego pracownika.", "Informacja", 0)
+            
+            notification_win.label.setText("Dodano nowego pracownika.")
+            notification_win.show()
             # TODO # zarejestrowac ta akcje w logach zdarzen
+            ###################### #log #rejestr #zdarzenie ########################################################################################
+            
+            cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+            ID_pracownika = cursor.fetchall()[0][0]
+            # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # print(ID_pracownika)
+            
+            query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+            taxi = (ID_pracownika, "Dodano pracownika {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=imie,jakie_nazwisko=nazwisko), "")
+            cursor.execute(query, taxi)
+            cnx.commit()
+            window.eventList.insertItem(0, "Dodano pracownika {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=imie,jakie_nazwisko=nazwisko)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            ########################################################################################################################################
+            new_user_window.hide()
         except:
             print("Niepoprawne dane. Zwróć uwagę, czy data urodzenia oraz email mają poprawny format.")
             cnx.rollback()
-        cnx.close()
+        
 
 class edit_user(QMainWindow):    #
 
@@ -1298,24 +1726,21 @@ class edit_user(QMainWindow):    #
         self.pushButtonFilterEditUser.clicked.connect(self.pushButtonFilterEditUserClicked)
         self.pushButtonLoadToEditUser.clicked.connect(self.pushButtonLoadToEditUserClicked)
         self.pushButtonDeleteUser.clicked.connect(self.pushButtonDeleteUserClicked)
-    
+        
+        self.sexComboBox.addItem("Mężczyzna")
+        self.sexComboBox.addItem("Kobieta")
+        
+        self.threadpool = QThreadPool()
+        
     def pushButtonFilterEditUserClicked(self):
         # Filtrowanie pacjentow
         self.userToEditComboBox.clear()
         
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         print("Wybor pracownikow... ")
-                #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+
         seekToEdit = self.filterToEditLineEdit.text()
         print(seekToEdit)
         try:
@@ -1336,23 +1761,15 @@ class edit_user(QMainWindow):    #
         except:
             print("SELECT query failed")
 
-        cnx.close()
+        
     
     def pushButtonLoadToEditUserClicked(self):
         
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         print("Ladowanie danych pracownika... ")
-        #Connect with database
-        result = None ## HASLO ZMIENIONE, NOWA BAZA !!! user / userpass
-        while result is None:   # wykonuje sie bez konca, jezeli nie uda sie polaczyc, potrzebne do logowania, ale infinite loop
-            try:
-                  # auth = input("Podaj haslo do bazy:\n") # przeniesc to do "maina", wykonanie przed poczatkiem programu
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass', host = 'localhost', database = 'main_db')
-                result = cnx
-                print("...Connection established...")
-            except:
-                print("Connection failed")
-                pass
-        cursor = cnx.cursor()
+
         # seekHist = self.filterToEditLineEdit.text()
         # print(seekHist)
         wybrany_pracownik = self.userToEditComboBox.currentText()
@@ -1377,7 +1794,13 @@ class edit_user(QMainWindow):    #
                 # pacjenci.append(str(x[0])+" "+str(x[1]))
                 self.nameLineEdit.setText(str(x[0]))
                 self.surnameLineEdit.setText(str(x[1]))
-                self.sexLineEdit.setText(str(x[2]))
+                # self.sexLineEdit.setText(str(x[2]))
+                self.sexComboBox.clear()
+                self.sexComboBox.addItem(str(x[2]))
+                if self.sexComboBox.currentText()[0]=="M":
+                    self.sexComboBox.addItem("Kobieta")
+                else:
+                    self.sexComboBox.addItem("Mezczyzna")
                 self.birthDateLineEdit.setText(str(x[3]))
                 self.peselLineEdit.setText(str(x[4]))
                 self.hireDateLineEdit.setText(str(x[5]))
@@ -1390,16 +1813,17 @@ class edit_user(QMainWindow):    #
         except:
             print("SELECT query failed")
 
-        cnx.close()
-    
-    @pyqtSlot()
     def pushButtonAbortClicked(self):
         edit_patient_window.hide()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
     def pushButtonSaveChangesClicked(self):
         
         noweImie = self.nameLineEdit.text()
         noweNazwisko = self.surnameLineEdit.text()
-        nowaPlec = self.sexLineEdit.text()
+        nowaPlec = self.sexComboBox.currentText()
         nowaData_urodzenia = self.birthDateLineEdit.text()
         nowyPESEL = self.peselLineEdit.text()
         nowaData_zatrudnienia = self.hireDateLineEdit.text()
@@ -1409,17 +1833,9 @@ class edit_user(QMainWindow):    #
         nowaMiejscowosc = self.cityLineEdit.text()
         nowaUlica = self.streetLineEdit.text()
         
-        result = None
-        while result is None:
-            try:
-                # auth = input("Podaj haslo do bazy:\n")
-                cnx = mysql.connector.connect(user = 'user', password = 'userpass',
-                                                                          host = 'localhost',
-                                                                          database = 'main_db')
-                result = cnx
-            except:
-                pass
-        cursor = cnx.cursor(buffered=True)
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         #Writing Query to insert data
         # Przekazanie, ktora osoba ma zostac edytowana do buttona potwierdzajacego i wykonujacego UPDATE
         # Pobranie tych danych z aktualnego ComboBoxa
@@ -1445,7 +1861,10 @@ class edit_user(QMainWindow):    #
             # Czyszczenie wprowadzonego tekstu
             self.nameLineEdit.setText("")
             self.surnameLineEdit.setText("")
-            self.sexLineEdit.setText("")
+            # self.sexLineEdit.setText("")
+            self.sexComboBox.clear()
+            self.sexComboBox.addItem("Mężczyzna")
+            self.sexComboBox.addItem("Kobieta")
             self.birthDateLineEdit.setText("")
             self.peselLineEdit.setText("")
             self.hireDateLineEdit.setText("")
@@ -1454,14 +1873,35 @@ class edit_user(QMainWindow):    #
             self.cityCodeLineEdit.setText("")
             self.cityLineEdit.setText("")
             self.streetLineEdit.setText("")
-            ctypes.windll.user32.MessageBoxW(0, "Zmieniono dane pracownika.", "Informacja", 0)
+            
+            notification_win.label.setText("Zmieniono dane pracownika.")
+            notification_win.show()
             # TODO # zarejestrowac ta akcje w logach zdarzen
+            ###################### #log #rejestr #zdarzenie ########################################################################################
+            
+            cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+            ID_pracownika = cursor.fetchall()[0][0]
+            # print("Wyswietlanie ID pracownika na podstawie loginu...")
+            # print(ID_pracownika)
+            
+            query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+            taxi = (ID_pracownika, "Zmieniono dane pracownika {jakie_imie} {jakie_nazwisko}".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
+            cursor.execute(query, taxi)
+            cnx.commit()
+            window.eventList.insertItem(0, "Zmieniono dane pracownika {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            ########################################################################################################################################
+
         except:
-            ctypes.windll.user32.MessageBoxW(0, "Niepoprawne dane. Zwróć uwagę, czy data urodzenia, data zatrudnienia oraz email mają poprawny format.", "Informacja", 0)
+            notification_win.label.setText("Niepoprawne dane. Zwróć uwagę, czy data urodzenia, data zatrudnienia oraz email mają poprawny format.")
+            notification_win.show()
             cnx.rollback()
-        cnx.close()
+        
 
     def pushButtonDeleteUserClicked(self):
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
         
         result = None
         while result is None:
@@ -1508,7 +1948,10 @@ class edit_user(QMainWindow):    #
                 # Czyszczenie wprowadzonego tekstu
                 self.nameLineEdit.setText("")
                 self.surnameLineEdit.setText("")
-                self.sexLineEdit.setText("")
+                # self.sexLineEdit.setText("")
+                self.sexComboBox.clear()
+                self.sexComboBox.addItem("Mężczyzna")
+                self.sexComboBox.addItem("Kobieta")
                 self.birthDateLineEdit.setText("")
                 self.peselLineEdit.setText("")
                 self.hireDateLineEdit.setText("")
@@ -1517,12 +1960,30 @@ class edit_user(QMainWindow):    #
                 self.cityCodeLineEdit.setText("")
                 self.cityLineEdit.setText("")
                 self.streetLineEdit.setText("")
-                ctypes.windll.user32.MessageBoxW(0, "Usunieto pracownika.", "Informacja", 0)
+                
+                notification_win.label.setText("Usunieto pracownika {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko))
+                notification_win.show()
                 # TODO # zarejestrowac ta akcje w logach zdarzen
+                ###################### #log #rejestr #zdarzenie ########################################################################################
+            
+                cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+                ID_pracownika = cursor.fetchall()[0][0]
+                # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                # print(ID_pracownika)
+                
+                query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+                taxi = (ID_pracownika, "Usunieto pracownika {jakie_imie} {jakie_nazwisko}".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko), "")
+                cursor.execute(query, taxi)
+                cnx.commit()
+                window.eventList.insertItem(0, "Usunieto pracownika {jakie_imie} {jakie_nazwisko}, ".format(jakie_imie=wybrane_imie,jakie_nazwisko=wybrane_nazwisko)+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                
+                ########################################################################################################################################
+
             except:
-                ctypes.windll.user32.MessageBoxW(0, "Wystapil problem podczas usuwania pracownika. Sprawdz czy pracownik zostal wybrany.", "Informacja", 0)
+                notification_win.label.setText("Wystapil problem podczas usuwania pracownika. Sprawdz czy pracownik zostal wybrany.")
+                notification_win.show()
                 cnx.rollback()
-            cnx.close()
+            
         else:
 
             print("")
@@ -1532,11 +1993,19 @@ class auth(QMainWindow): #   OKNO LOGOWANIA DO APLIKACJI   ######   PO POMYSLNEJ
         QMainWindow.__init__(self)
         loadUi('auth_gui.ui', self)
         self.loginButton.clicked.connect(self.loginButtonClicked)
+        self.abortButton.clicked.connect(self.abortButtonClicked)
         self.passwordLineEdit.setEchoMode(QtWidgets.QLineEdit.Password)
-        ################################################################## DO TESTOW ##### POZNIEJ SKASOWAC TE LINIE
+        ################################################################## DO TESTOW ##### POZNIEJ SKASOWAC TE LINIE # TODO
         self.loginLineEdit.setText("admin")
         self.passwordLineEdit.setText("admin")
+        
+        self.threadpool = QThreadPool()
+        
     def loginButtonClicked(self):
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
         login = self.loginLineEdit.text()
         password = self.passwordLineEdit.text()  
         ################################################# LOGOWANIE DO APLIKACJI - login i hasło z bazy danych, tabela personel
@@ -1549,26 +2018,203 @@ class auth(QMainWindow): #   OKNO LOGOWANIA DO APLIKACJI   ######   PO POMYSLNEJ
                 cursor = cnx.cursor()
                 print("...Connection established...")
             except:
-                ctypes.windll.user32.MessageBoxW(0, "Connection failed. Check if Database is running.", "Informacja", 0)
+                notification_win.label.setText("Blad polaczenia. Sprawdz czy serwer bazy danych jest uruchomiony.")
+                notification_win.show()
                 pass
         try:
             cursor.execute("SELECT zaszyfrowane_haslo FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=login)) #Execute the Query
-            print("Access granted.")
             myresult = cursor.fetchall()    # przeczytany hasz wlasciwego hasla # zakomentowac oba wiersze
-            print(myresult) # kontrolnie, pokazanie HASZU hasla z bazy
-            print(encrypt_string(password))
-            myresult==password
-            cnx.close()
-            window.show()
-            auth_win.hide()
+            myresult = myresult[0][0]
+            # print(myresult) # kontrolnie, pokazanie HASZU hasla z bazy
+            # print(encrypt_string(password))
+            
+            if myresult==encrypt_string(password):
+                window.show()
+                auth_win.hide()
+                print("Logowanie pomyslne.")
+                window.current_user = login
+                
+                ###################### #log #rejestr #zdarzenie ########################################################################################
+
+                cursor.execute("SELECT ID_pracownika FROM personel WHERE login LIKE \"{jaki_login}\"".format(jaki_login=window.current_user))
+                ID_pracownika = cursor.fetchall()[0][0]
+                # print("Wyswietlanie ID pracownika na podstawie loginu...")
+                # print(ID_pracownika)
+                
+                query = ("INSERT INTO rejestr_zdarzen (ID_pracownika,rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s, %s)")
+                taxi = (ID_pracownika, "pomyslne logowanie", "")
+                cursor.execute(query, taxi)
+                cnx.commit()
+                window.eventList.insertItem(0, "pomyslne logowanie, "+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                
+                ########################################################################################################################################
         except:
             print("Login attempt failed.")
-            ctypes.windll.user32.MessageBoxW(0, "Niepoprawny login lub hasło.", "Informacja", 0)
+            notification_win.label.setText("Niepoprawny login lub hasło.")
+            notification_win.show()
+            
+            ###################### #log #rejestr #zdarzenie ########################################################################################
 
+            query = ("INSERT INTO rejestr_zdarzen (rodzaj_zdarzenia,opis_zdarzenia) VALUES (%s, %s)")
+            taxi = ("nieudana proba logowania", "")
+            cursor.execute(query, taxi)
+            cnx.commit()
+            window.eventList.insertItem(0, "nieudana proba logowania, "+str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            ########################################################################################################################################
 
+    def abortButtonClicked(self):
+        
+        worker = Worker()
+        self.threadpool.start(worker)
+        
+        auth_win.close()
+        
+            
+class notification(QMainWindow):    #
+
+    def __init__(self):
+        QMainWindow.__init__(self)
+        loadUi('notification.ui', self)
+        self.setWindowTitle("Informacja")
+        self.pushButtonOK.clicked.connect(self.pushButtonOKClicked)
+        
+        self.threadpool = QThreadPool()
+        
+    def pushButtonOKClicked(self):
+        
+        worker = Worker()
+        self.threadpool.start(worker)
+        
+        self.hide()
+        
+class python_to_arduino_msg(QMainWindow):    #
+    
+    def __init__(self):
+        QMainWindow.__init__(self)
+        loadUi('komunikat_zwrotny.ui', self)
+        self.setWindowTitle("Informacja zwrotna do układu pomiarowego")
+        
+        self.pushButtonFilterEditPatient.clicked.connect(self.pushButtonFilterEditPatientClicked)
+        self.pushButtonSend.clicked.connect(self.pushButtonSendClicked)
+        
+        self.msgComboBox.clear()
+        self.msgComboBox.addItem("1 - Zmień tryb transmisji na ciągły")
+        self.msgComboBox.addItem("2 - Zmień tryb transmisji na zdarzeniowy")
+        self.msgComboBox.addItem("3 - Przerwij wysyłanie pomiarów")
+        self.msgComboBox.addItem("4 - Wznów wysyłanie pomiarów")
+        
+        self.threadpool = QThreadPool()
+        
+
+    def pushButtonFilterEditPatientClicked(self):
+        # Filtrowanie pacjentow
+        self.patientToEditComboBox.clear()
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+        
+        print("Wybor pacjentow... ")
+
+        seekToEdit = self.filterToEditLineEdit.text()
+        print(seekToEdit)
+        try:
+            cursor.execute("SELECT pac.imie, pac.nazwisko, prz.ID_czujnika FROM pacjenci pac JOIN przydzial_czujnikow prz ON pac.ID_pacjenta=prz.ID_pacjenta WHERE pac.imie LIKE BINARY \'%{seek}%\' OR pac.nazwisko LIKE BINARY \'%{seek}%\' OR pac.ID_pacjenta LIKE BINARY \'%{seek}%\'".format(seek=seekToEdit))
+            # usunac przedrostek BINARY, jezeli sie chce case_insensitive
+            # cursor.execute("SELECT imie, nazwisko FROM pacjenci")
+            print("...SELECT query succeeded...")
+            
+            # OK.... ale teraz jak w matplotlibie okreslic DATĘ jako os X, i x_axis jako os Y (x_axis to wartosci, os pionowa)
+            
+            myresult = cursor.fetchall()
+            # print("The length of \'myresult\' is: ", len(myresult)) # pokazuje ile rekordow ma zostac wykorzystanych na wykresie
+            pacjenci = []
+            for x in myresult:
+                        pacjenci.append(str(x[0])+" "+str(x[1])+" czujnik: "+str(x[2]))
+            self.patientToEditComboBox.addItems(pacjenci)
+            ###################################################################
+        except:
+            print("SELECT query failed")
+
+    
+    def pushButtonSendClicked(self):
+        
+        print("Wysylanie wiadomosci... ")
+        
+        worker = Worker()
+        self.threadpool.start(worker) 
+
+        # seekHist = self.filterToEditLineEdit.text()
+        # print(seekHist)
+        wybrany_komunikat = self.msgComboBox.currentText()
+        try:
+            wybrany_komunikat = wybrany_komunikat.split()
+            wybrane_id_komunikatu = wybrany_komunikat[0]
+        except Exception as e: print(e)
+            # pass
+        print("Wybrane ID komunikatu: "+wybrane_id_komunikatu)
+        
+        ser.close()
+        board = Arduino(port)
+        ####################################### zakodowanie rodzaju komunikatu na pinach arduino
+        if wybrane_id_komunikatu==1:
+            board.digital[6].write(1) # najmlodszy bit z 4 przydzielonych do zakodowania wiadomosci
+            
+        elif wybrane_id_komunikatu==2:
+            board.digital[5].write(1)
+            
+        elif wybrane_id_komunikatu==3:
+            board.digital[6].write(1)
+            board.digital[5].write(1)
+            
+        elif wybrane_id_komunikatu==3:
+            board.digital[4].write(1)
+        ######################################## zakodowanie ID czujnika
+        wybrany_pacjent = self.patientToEditComboBox.currentText()
+        try:
+            wybrany_pacjent = wybrany_pacjent.split()
+            wybrane_id_czujnika_pacjenta = wybrany_pacjent[3]
+        except Exception as e: print(e)
+            # pass
+        if wybrane_id_czujnika_pacjenta==1:
+            board.digital[13].write(1)
+        elif wybrane_id_czujnika_pacjenta==2:
+            board.digital[12].write(1)
+        elif wybrane_id_czujnika_pacjenta==3:
+            board.digital[13].write(1)
+            board.digital[12].write(1)
+        elif wybrane_id_czujnika_pacjenta==4:
+            board.digital[11].write(1)
+        elif wybrane_id_czujnika_pacjenta==5:
+            board.digital[11].write(1)
+            board.digital[13].write(1)
+        elif wybrane_id_czujnika_pacjenta==6:
+            board.digital[11].write(1)
+            board.digital[12].write(1)
+        elif wybrane_id_czujnika_pacjenta==7:
+            board.digital[11].write(1)
+            board.digital[12].write(1)
+            board.digital[13].write(1)
+        elif wybrane_id_czujnika_pacjenta==8:
+            board.digital[10].write(1)
+        elif wybrane_id_czujnika_pacjenta==9:
+            board.digital[10].write(1)
+            board.digital[13].write(1)
+        elif wybrane_id_czujnika_pacjenta==10:
+            board.digital[10].write(1)
+            board.digital[12].write(1)
+        
+            
+        
+        board.exit()
+        ser.open()
+        
+        
 if __name__ == '__main__':
         
     app=QApplication(sys.argv)
+    app.setStyle('Breeze')
+    
     window = main_window()
     # window.show() # ten wiersz jest ukryty, bo okno ma się pokazać dopiero po zalogowaniu, mozna odkomentowac do obejscia hasla
     new_patient_window = new_patient()    # stworzenie okna dodawania nowego pacjenta
@@ -1583,8 +2229,12 @@ if __name__ == '__main__':
     auth_win = auth()
     auth_win.show()
     
+    notification_win = notification()
+    
     assign_sensor_window = assign_sensor()
     
+    python_to_arduino_msg_win = python_to_arduino_msg()
+        
     
     # new_user_window = new_user()
     sys.exit(app.exec_())
