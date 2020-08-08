@@ -6,21 +6,21 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>728</width>
-    <height>378</height>
+    <width>825</width>
+    <height>368</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QLineEdit" name="loginLineEdit">
+   <widget class="QPushButton" name="pushButtonAdd">
     <property name="geometry">
      <rect>
-      <x>290</x>
-      <y>90</y>
-      <width>271</width>
-      <height>31</height>
+      <x>100</x>
+      <y>250</y>
+      <width>141</width>
+      <height>51</height>
      </rect>
     </property>
     <property name="font">
@@ -28,13 +28,34 @@
       <pointsize>12</pointsize>
      </font>
     </property>
+    <property name="text">
+     <string>Dodaj</string>
+    </property>
    </widget>
-   <widget class="QLineEdit" name="passwordLineEdit">
+   <widget class="QPushButton" name="pushButtonAbort">
     <property name="geometry">
      <rect>
-      <x>290</x>
+      <x>600</x>
+      <y>250</y>
+      <width>131</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>12</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>Anuluj</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="macLineEdit">
+    <property name="geometry">
+     <rect>
+      <x>410</x>
       <y>150</y>
-      <width>271</width>
+      <width>281</width>
       <height>31</height>
      </rect>
     </property>
@@ -44,30 +65,12 @@
      </font>
     </property>
    </widget>
-   <widget class="QLabel" name="loginLabel">
+   <widget class="QLabel" name="macLabel">
     <property name="geometry">
      <rect>
-      <x>140</x>
-      <y>90</y>
-      <width>101</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="text">
-     <string>Login</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="passwordLabel">
-    <property name="geometry">
-     <rect>
-      <x>140</x>
+      <x>160</x>
       <y>150</y>
-      <width>91</width>
+      <width>201</width>
       <height>31</height>
      </rect>
     </property>
@@ -77,16 +80,16 @@
      </font>
     </property>
     <property name="text">
-     <string>Hasło</string>
+     <string>Adres MAC</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="loginButton">
+   <widget class="QLabel" name="sensorIDLabel">
     <property name="geometry">
      <rect>
-      <x>290</x>
-      <y>230</y>
-      <width>121</width>
-      <height>41</height>
+      <x>160</x>
+      <y>100</y>
+      <width>221</width>
+      <height>31</height>
      </rect>
     </property>
     <property name="font">
@@ -95,40 +98,49 @@
      </font>
     </property>
     <property name="text">
-     <string>Zaloguj</string>
-    </property>
-    <property name="autoDefault">
-     <bool>false</bool>
-    </property>
-    <property name="default">
-     <bool>true</bool>
+     <string>ID czujnika (opcjonalne)</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="abortButton">
+   <widget class="QLineEdit" name="sensorIDLineEdit">
     <property name="geometry">
      <rect>
-      <x>450</x>
-      <y>230</y>
-      <width>111</width>
-      <height>41</height>
+      <x>410</x>
+      <y>100</y>
+      <width>281</width>
+      <height>31</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <pointsize>12</pointsize>
      </font>
-    </property>
-    <property name="text">
-     <string>Wyjdź</string>
     </property>
    </widget>
    <widget class="QLabel" name="label">
     <property name="geometry">
      <rect>
-      <x>240</x>
-      <y>20</y>
-      <width>211</width>
+      <x>270</x>
+      <y>30</y>
+      <width>291</width>
       <height>41</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>14</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>Dodawanie nowego czujnika</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButtonAddDefaultID">
+    <property name="geometry">
+     <rect>
+      <x>290</x>
+      <y>250</y>
+      <width>261</width>
+      <height>51</height>
      </rect>
     </property>
     <property name="font">
@@ -137,7 +149,7 @@
      </font>
     </property>
     <property name="text">
-     <string>Logowanie do aplikacji</string>
+     <string>Dodaj (auto ID czujnika)</string>
     </property>
    </widget>
   </widget>
@@ -146,13 +158,18 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>728</width>
+     <width>825</width>
      <height>21</height>
     </rect>
    </property>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
+ <tabstops>
+  <tabstop>macLineEdit</tabstop>
+  <tabstop>pushButtonAdd</tabstop>
+  <tabstop>pushButtonAbort</tabstop>
+ </tabstops>
  <resources/>
  <connections/>
 </ui>
