@@ -1,0 +1,15 @@
+Przechodzimy do katalogu, gdzie znajdują się pliki Dockerfile oraz komendy_tworzace_baze.sql
+
+Wykonujemy następnie komendy:
+
+docker build -t user/mysql01 .
+
+docker run --name db1 -p3306:3306 -d user/mysql01
+
+docker start BD_monitoring_osob
+
+docker exec -it BD_monitoring_osob /bin/bash
+
+mysql -uuser -puserpass
+
+use main_db;
